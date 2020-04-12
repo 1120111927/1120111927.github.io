@@ -35,6 +35,8 @@ map输出小于阈值（属性`mapreduce.reduce.shuffle.input.buffer.percent`设
 
 一个后台线程负责将磁盘上的副本合并成更大的排序文件，来为后面的合并节省时间。压缩的map输出在内存中解压缩后才能进行合并。
 
+由于map任务成功完成后会通过心跳机制通知Application Master，所以，对于一个MR作业，其Application Master知道map输出与主机位置之间的映射关系。reducer中的一个线程定期询问Application Master来获取map输出主机的位置，知道获取所有输出位置。
+
 ## 排序阶段（sort phase）
 
 复制完所有map输出后，reduce任务进入排序阶段，以多轮的方式合并map输出（维持其排序），最后一轮直接把数据输入reduce函数（而不是合并成一个单独的排序文件，从而减少了一轮磁盘读写过程）。最后的合并可能是内存和磁盘片段的混合合并。
