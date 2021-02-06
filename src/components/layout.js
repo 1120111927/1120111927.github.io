@@ -30,8 +30,9 @@ const Layout = ({ location, title, children }) => {
       style={{
         marginLeft: `auto`,
         marginRight: `auto`,
-        maxWidth: rhythm(24),
-        padding: `${rhythm(1.5)} ${rhythm(3/4)}`,
+        maxWidth: rhythm(35),
+        minWidth: rhythm(30),
+        padding: `${rhythm(1.5)} ${rhythm(1/2)}`,
       }}
     >
       {(location.pathname === rootPath) && <header>{header}</header>}
