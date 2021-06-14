@@ -29,8 +29,11 @@ module.exports = {
     {
       resolve: `gatsby-transformer-remark`,
       options: {
+        "strategy": "img",
         plugins: [
-          'gatsby-remark-graphviz',
+          `gatsby-remark-draw`,
+          `gatsby-remark-graphviz`,
+          `gatsby-remark-code-titles`,
           {
             resolve: `gatsby-remark-katex`,
             options: {
@@ -50,6 +53,12 @@ module.exports = {
             options: {
               wrapperStyle: `margin-bottom: 1.0725rem`,
             },
+          },
+          {
+            resolve: `gatsby-remark-plantuml-lite`,
+            options: { // Configuration options
+              imageType: `svg`
+            }
           },
           `gatsby-remark-prismjs`,
           `gatsby-remark-copy-linked-files`,
