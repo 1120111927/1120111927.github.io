@@ -7,6 +7,7 @@
 
 import * as React from "react"
 import { useStaticQuery, graphql } from "gatsby"
+import "@fontsource/fira-code"
 
 const Seo = ({ description, title, children }) => {
   const { site } = useStaticQuery(

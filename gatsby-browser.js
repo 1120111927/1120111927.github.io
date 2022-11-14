@@ -1,4 +1,5 @@
 // custom typefaces
+import "@fontsource/fira-code"
 import "@fontsource/montserrat/variable.css"
 import "@fontsource/merriweather"
 // normalize CSS across browsers
