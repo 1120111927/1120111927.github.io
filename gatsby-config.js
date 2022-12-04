@@ -12,7 +12,7 @@ module.exports = {
     title: `知行合一`,
     author: {
       name: `luuua`,
-      summary: `good good study, day day up.`,
+      summary: `圣人之道,吾性自足,不假外求.`,
     },
     description: `A starter blog demonstrating what Gatsby can do.`,
     siteUrl: `https://gatsbystarterblogsource.gatsbyjs.io/`,
