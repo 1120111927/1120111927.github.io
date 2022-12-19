@@ -179,6 +179,7 @@ ul li,
 ol li {
   padding-left: var(--spacing-0);
   margin-bottom: calc(var(--spacing-8) / 2);
+  margin-left: var(--spacing-6);
 }
 
 li > p {
@@ -328,4 +329,18 @@ a:focus {
   ol {
     list-style-position: inside;
   }
+}
+
+.gatsby-highlight {
+  background-color: #f5f2f0;
+  border-radius: 0.3em;
+  margin: 0.5em 0;
+  padding: 1em;
+  overflow: auto;
+}
+
+.gatsby-highlight pre[class*="language-"].line-numbers {
+  padding: 0;
+  padding-left: 2.8em;
+  overflow: initial;
 }

@@ -17,7 +17,6 @@ module.exports = {
     description: `A starter blog demonstrating what Gatsby can do.`,
     siteUrl: `https://gatsbystarterblogsource.gatsbyjs.io/`,
     social: {
-      twitter: `kylemathews`,
     },
   },
   plugins: [
@@ -66,8 +65,12 @@ module.exports = {
               imageType: `svg`
             }
           },
-
-          `gatsby-remark-prismjs`,
+          {
+            resolve: `gatsby-remark-prismjs`,
+            options: {
+              showLineNumbers: true
+            }
+          }
         ],
       },
     },

@@ -1,8 +1,8 @@
 ---
 title: Flink RPC
 date: "2022-12-03"
-description: 
-tags: 
+description: Flink使用Akka作为Flink自身消息的RPC通信框架。
+tags: RpcGateway、RpcEndpoint、RpcService、RpcServer、AkkaRpcActor
 ---
 
 Flink使用Akka作为Flink自身消息的RPC通信框架。
@@ -38,6 +38,30 @@ Akka有两种核心的异步通信方式：
 4. 执行消息：RunAsync，带有Runnable对象的异步执行请求信息。`RpcEndpoint.runAsync`方法调用`RpcService.runAsync`，然后调用`RpcService.scheduleRunAsync`，`RpcService.scheduleRunAsync`调用`AkkaInvocationHandler.tell`方法发送RunAsync消息
 
 ## RPC通信组件
+
+```plantuml
+@startuml
+!include https://raw.githubusercontent.com/bschwarz/puml-themes/master/themes/sketchy-outline/puml-theme-sketchy-outline.puml
+hide empty members
+skinparam ArrowThickness 1
+
+interface RpcGateway
+interface TaskExecutorGateway
+interface FencedRpcGateway
+interface JobMasterGateway
+interface ResourceManagerGateway
+interface DispatcherGateway
+
+RpcGateway <|-- TaskExecutorGateway
+RpcGateway <|-- FencedRpcGateway
+RpcGateway <|-- JobMasterGateway
+RpcGateway <|-- DispatcherGateway
+FencedRpcGateway <|-- JobMasterGateway
+FencedRpcGateway <|-- ResourceManagerGateway
+FencedRpcGateway <|-- DispatcherGateway
+
+@enduml
+```
 
 **RpcGateway** 远程调用网关，是Flink远程调用的接口协议，提供了行为定义，对外提供可调用的接口，所有实现RPC的组件、类都实现了此接口。
 
