@@ -4,91 +4,17 @@
 <p>Java内存模型是围绕着在并发过程中如何处理原子性、可见性和有序性这3个重要特征来建立的，主要目标是定义程序中各个变量[^ 包括实例字段、静态字段和构成数组对象的元素，但不包括局部变量与方法参数，这二者为线程私有，不会被共享，自然不会存在竞争问题]的访问规则，即在虚拟机中将变量存储到内存和从内存中取出变量这样的底层细节。</p>
 <p>Java内存模型规定所有的变量都存储在主内存（Main Memory）中，每条线程有自己的工作内存（Working Memory），线程的工作内存中保存了被该线程使用到的变量的主内存副本拷贝，线程对变量的所有操作（读取、赋值等）都必须在工作内存中进行，而不能直接读写主内存中的变量。不同的线程之间也无法直接访问对方工作内存中的变量，线程间变量值的传递均需要通过主内存来完成。</p>
 <p>线程、主内存、工作内存三者的交互关系：</p>
-<div class="remark-draw remark-draw-bob"><svg xmlns="http://www.w3.org/2000/svg" width="680" height="192">
-    <style>
-        line, path, circle, rect, polygon{stroke:black;stroke-width:2;stroke-opacity:1;fill-opacity:1;stroke-linecap:round;stroke-linejoin:miter;}text{font-family:monospace;font-size:14px;}rect.backdrop{stroke:none;fill:white;}.broken{stroke-dasharray:8;}.filled{fill:black;}.bg_filled{fill:white;}.nofill{fill:white;}.end_marked_arrow{marker-end:url(#arrow);}.start_marked_arrow{marker-start:url(#arrow);}.end_marked_diamond{marker-end:url(#diamond);}.start_marked_diamond{marker-start:url(#diamond);}.end_marked_circle{marker-end:url(#circle);}.start_marked_circle{marker-start:url(#circle);}.end_marked_open_circle{marker-end:url(#open_circle);}.start_marked_open_circle{marker-start:url(#open_circle);}.end_marked_big_open_circle{marker-end:url(#big_open_circle);}.start_marked_big_open_circle{marker-start:url(#big_open_circle);}
-        <!--separator-->
-        
-    </style>
-    <defs>
-        <marker id="arrow" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,0 0,4 4,2 0,0"></polygon>
-        </marker>
-        <marker id="diamond" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,2 2,0 4,2 2,4 0,2"></polygon>
-        </marker>
-        <marker id="circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="filled"></circle>
-        </marker>
-        <marker id="open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="bg_filled"></circle>
-        </marker>
-        <marker id="big_open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="3" class="bg_filled"></circle>
-        </marker>
-    </defs>
-    <rect class="backdrop" x="0" y="0" width="680" height="192"></rect>
-    <rect x="20" y="8" width="112" height="32" class="solid nofill" rx="4"></rect>
-    <text x="34" y="28" >Java</text>
-    <text x="74" y="28" >Thread</text>
-    <rect x="212" y="8" width="136" height="32" class="solid nofill" rx="4"></rect>
-    <text x="226" y="28" >Working</text>
-    <text x="290" y="28" >Memory</text>
-    <rect x="436" y="8" width="56" height="160" class="solid nofill" rx="0"></rect>
-    <text x="450" y="60" >Save</text>
-    <text x="450" y="92" >and</text>
-    <text x="450" y="124" >Load</text>
-    <rect x="564" y="40" width="104" height="96" class="solid nofill" rx="4"></rect>
-    <text x="602" y="76" >Main</text>
-    <text x="594" y="108" >Memory</text>
-    <rect x="20" y="72" width="112" height="32" class="solid nofill" rx="4"></rect>
-    <text x="34" y="92" >Java</text>
-    <text x="74" y="92" >Thread</text>
-    <rect x="212" y="72" width="136" height="32" class="solid nofill" rx="4"></rect>
-    <text x="226" y="92" >Working</text>
-    <text x="290" y="92" >Memory</text>
-    <rect x="20" y="136" width="112" height="32" class="solid nofill" rx="4"></rect>
-    <text x="34" y="156" >Java</text>
-    <text x="74" y="156" >Thread</text>
-    <rect x="212" y="136" width="136" height="32" class="solid nofill" rx="4"></rect>
-    <text x="226" y="156" >Working</text>
-    <text x="290" y="156" >Memory</text>
-    <g>
-        <polygon points="160,20 152,24 160,28" class="filled"></polygon>
-        <line x1="160" y1="24" x2="192" y2="24" class="solid"></line>
-        <polygon points="192,20 200,24 192,28" class="filled"></polygon>
-    </g>
-    <g>
-        <polygon points="376,20 368,24 376,28" class="filled"></polygon>
-        <line x1="376" y1="24" x2="408" y2="24" class="solid"></line>
-        <polygon points="408,20 416,24 408,28" class="filled"></polygon>
-    </g>
-    <g>
-        <polygon points="160,84 152,88 160,92" class="filled"></polygon>
-        <line x1="160" y1="88" x2="192" y2="88" class="solid"></line>
-        <polygon points="192,84 200,88 192,92" class="filled"></polygon>
-    </g>
-    <g>
-        <polygon points="376,84 368,88 376,92" class="filled"></polygon>
-        <line x1="376" y1="88" x2="408" y2="88" class="solid"></line>
-        <polygon points="408,84 416,88 408,92" class="filled"></polygon>
-    </g>
-    <g>
-        <polygon points="512,84 504,88 512,92" class="filled"></polygon>
-        <line x1="512" y1="88" x2="544" y2="88" class="solid"></line>
-        <polygon points="544,84 552,88 544,92" class="filled"></polygon>
-    </g>
-    <g>
-        <polygon points="160,148 152,152 160,156" class="filled"></polygon>
-        <line x1="160" y1="152" x2="192" y2="152" class="solid"></line>
-        <polygon points="192,148 200,152 192,156" class="filled"></polygon>
-    </g>
-    <g>
-        <polygon points="376,148 368,152 376,156" class="filled"></polygon>
-        <line x1="376" y1="152" x2="408" y2="152" class="solid"></line>
-        <polygon points="408,148 416,152 408,156" class="filled"></polygon>
-    </g>
-</svg></div>
+<div class="gatsby-highlight" data-language="bob-svg"><pre style="counter-reset: linenumber NaN" class="language-bob-svg line-numbers"><code class="language-bob-svg">  .-------------.         .----------------.          +------+
+  | Java Thread |  &lt;----&gt; | Working Memory |  &lt;----&gt;  |      |
+  &#39;-------------&#39;         &#39;----------------&#39;          |      |        .------------.
+                                                      | Save |        |            |
+  .-------------.         .----------------.          |      |        |    Main    |
+  | Java Thread |  &lt;----&gt; | Working Memory |  &lt;----&gt;  | and  | &lt;----&gt; |            |
+  &#39;-------------&#39;         &#39;----------------&#39;          |      |        |   Memory   |
+                                                      | Load |        |            |
+  .-------------.         .----------------.          |      |        &#39;------------&#39;
+  | Java Thread |  &lt;----&gt; | Working Memory |  &lt;----&gt;  |      |
+  &#39;-------------&#39;         &#39;----------------&#39;          +------+</code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre></div>
 <p>主内存、工作内存与Java运行时数据区域中的堆、栈、方法区等不是同一个层次的内存划分。从变量、主内存、工作内存的定义来看，主内存主要对应于Java堆中的对象实例数据部分，工作内存则对应于虚拟机栈中的部分区域。从更低层次上说，主内存就直接对应于物理硬件的内存，虚拟机可能会让工作内存优先存储于寄存器和高速缓存中。</p>
 <p>Java内存模型通过8种内存访问操作、执行操作的规则以及对volatile的特殊规定来确定一个访问在并发环境下是否安全，先行发生（happen-before）原则是它的一个等效判断原则。</p>
 <h2>内存间交互操作</h2>
@@ -144,4 +70,4 @@
           >
             window.___chunkMapping="{\"app\":[\"/app-ad3d39f610fe80fe9edd.js\"],\"component---src-pages-404-js\":[\"/component---src-pages-404-js-c76f759449b7ac2e3392.js\"],\"component---src-pages-index-js\":[\"/component---src-pages-index-js-350e9b4aa85349fee1e3.js\"],\"component---src-pages-using-typescript-tsx\":[\"/component---src-pages-using-typescript-tsx-edf3fb598638deb63681.js\"],\"component---src-templates-blog-post-js\":[\"/component---src-templates-blog-post-js-c66e12eb4b10a9ee344e.js\"]}";
           </script>
-        <script>window.___webpackCompilationHash="c289c25b54597d67e334";</script><script src="/webpack-runtime-073445805b0b7fca898b.js" async></script><script src="/framework-379b7ea7c44f25b32429.js" async></script><script src="/app-ad3d39f610fe80fe9edd.js" async></script><!-- slice-end id="_gatsby-scripts-1" --></body></html>
+        <script>window.___webpackCompilationHash="ae6eebb7a627dd215634";</script><script src="/webpack-runtime-073445805b0b7fca898b.js" async></script><script src="/framework-379b7ea7c44f25b32429.js" async></script><script src="/app-ad3d39f610fe80fe9edd.js" async></script><!-- slice-end id="_gatsby-scripts-1" --></body></html>

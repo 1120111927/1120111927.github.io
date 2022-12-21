@@ -145,144 +145,23 @@
 <ol>
 <li>生成逻辑计划（Logical Planning）：将用户代码转换成逻辑计划（logical plan），逻辑计划仅表示一组抽象的转换，不涉及executor或driver，仅仅是将用户表达式转换成最优的版本。首先将用户代码转换成未解析的逻辑计划（unresolved logical plan，未解析是指引用的表或列可能不存在），然后在分析器（analyzer）中使用catalog（存储着所有表和DataFrame信息）解析（resolve）列和表。如果catalog中不包含需要的表或列，分析器将拒绝未解析的逻辑计划。解析成功后结果会传给Catalyst优化器（一组尝试通过谓词下推、投影优化逻辑计划的规则，可以通过继承Catalyst来增加领域特定优化规则）生成优化的逻辑计划</li>
 </ol>
-<div class="remark-draw remark-draw-bob"><svg xmlns="http://www.w3.org/2000/svg" width="720" height="160">
-    <style>
-        line, path, circle, rect, polygon{stroke:black;stroke-width:2;stroke-opacity:1;fill-opacity:1;stroke-linecap:round;stroke-linejoin:miter;}text{font-family:monospace;font-size:14px;}rect.backdrop{stroke:none;fill:white;}.broken{stroke-dasharray:8;}.filled{fill:black;}.bg_filled{fill:white;}.nofill{fill:white;}.end_marked_arrow{marker-end:url(#arrow);}.start_marked_arrow{marker-start:url(#arrow);}.end_marked_diamond{marker-end:url(#diamond);}.start_marked_diamond{marker-start:url(#diamond);}.end_marked_circle{marker-end:url(#circle);}.start_marked_circle{marker-start:url(#circle);}.end_marked_open_circle{marker-end:url(#open_circle);}.start_marked_open_circle{marker-start:url(#open_circle);}.end_marked_big_open_circle{marker-end:url(#big_open_circle);}.start_marked_big_open_circle{marker-start:url(#big_open_circle);}
-        <!--separator-->
-        
-    </style>
-    <defs>
-        <marker id="arrow" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,0 0,4 4,2 0,0"></polygon>
-        </marker>
-        <marker id="diamond" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,2 2,0 4,2 2,4 0,2"></polygon>
-        </marker>
-        <marker id="circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="filled"></circle>
-        </marker>
-        <marker id="open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="bg_filled"></circle>
-        </marker>
-        <marker id="big_open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="3" class="bg_filled"></circle>
-        </marker>
-    </defs>
-    <rect class="backdrop" x="0" y="0" width="720" height="160"></rect>
-    <rect x="588" y="24" width="120" height="48" class="solid nofill" rx="0"></rect>
-    <text x="602" y="44" >optimized</text>
-    <text x="602" y="60" >logical</text>
-    <text x="666" y="60" >plan</text>
-    <text x="474" y="28" >logical</text>
-    <text x="18" y="44" >user</text>
-    <text x="130" y="44" >unresolved</text>
-    <text x="250" y="44" >analysis</text>
-    <text x="346" y="44" >resolved</text>
-    <text x="474" y="44" >optimization</text>
-    <text x="18" y="60" >code</text>
-    <text x="130" y="60" >logical</text>
-    <text x="194" y="60" >plan</text>
-    <text x="346" y="60" >logical</text>
-    <text x="410" y="60" >plan</text>
-    <text x="258" y="124" >catalog</text>
-    <text x="450" y="124" >catalyst</text>
-    <text x="522" y="124" >optimizer</text>
-    <g>
-        <line x1="4" y1="24" x2="60" y2="24" class="solid"></line>
-        <line x1="4" y1="24" x2="4" y2="72" class="solid"></line>
-        <line x1="60" y1="24" x2="60" y2="72" class="solid"></line>
-        <line x1="60" y1="56" x2="104" y2="56" class="solid"></line>
-        <polygon points="104,52 112,56 104,60" class="filled"></polygon>
-        <line x1="4" y1="72" x2="60" y2="72" class="solid"></line>
-    </g>
-    <g>
-        <line x1="116" y1="24" x2="236" y2="24" class="solid"></line>
-        <line x1="116" y1="24" x2="116" y2="72" class="solid"></line>
-        <line x1="236" y1="24" x2="236" y2="72" class="solid"></line>
-        <line x1="236" y1="56" x2="320" y2="56" class="solid"></line>
-        <polygon points="320,52 328,56 320,60" class="filled"></polygon>
-        <line x1="116" y1="72" x2="236" y2="72" class="solid"></line>
-    </g>
-    <g>
-        <line x1="332" y1="24" x2="452" y2="24" class="solid"></line>
-        <line x1="332" y1="24" x2="332" y2="72" class="solid"></line>
-        <line x1="452" y1="24" x2="452" y2="72" class="solid"></line>
-        <line x1="452" y1="56" x2="576" y2="56" class="solid"></line>
-        <polygon points="576,52 584,56 576,60" class="filled"></polygon>
-        <line x1="332" y1="72" x2="452" y2="72" class="solid"></line>
-    </g>
-    <g>
-        <polygon points="280,76 284,64 288,76" class="filled"></polygon>
-        <line x1="284" y1="76" x2="284" y2="104" class="solid"></line>
-        <line x1="244" y1="104" x2="324" y2="104" class="solid"></line>
-        <line x1="244" y1="104" x2="244" y2="136" class="solid"></line>
-        <line x1="324" y1="104" x2="324" y2="136" class="solid"></line>
-        <line x1="244" y1="136" x2="324" y2="136" class="solid"></line>
-    </g>
-    <g>
-        <polygon points="512,76 516,64 520,76" class="filled"></polygon>
-        <line x1="516" y1="76" x2="516" y2="104" class="solid"></line>
-        <line x1="436" y1="104" x2="604" y2="104" class="solid"></line>
-        <line x1="436" y1="104" x2="436" y2="136" class="solid"></line>
-        <line x1="604" y1="104" x2="604" y2="136" class="solid"></line>
-        <line x1="436" y1="136" x2="604" y2="136" class="solid"></line>
-    </g>
-</svg></div>
+<div class="gatsby-highlight" data-language="bob-svg"><pre style="counter-reset: linenumber NaN" class="language-bob-svg line-numbers"><code class="language-bob-svg">                                                          
++------+      +--------------+           +--------------+  logical       +--------------+
+| user |      | unresolved   | analysis  | resolved     |  optimization  | optimized    |
+| code |-----&gt;| logical plan |----------&gt;| logical plan |---------------&gt;| logical plan |
++------+      +--------------+     ^     +--------------+       ^        +--------------+
+                                   |                            |
+                              +----+----+             +---------+----------+
+                              | catalog |             | catalyst optimizer |
+                              +---------+             +--------------------+</code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre></div>
 <ol start="2">
 <li>生成物理计划（Physical Planning）：优化的逻辑计划会生成多个物理计划（Physical plan，也称Spark plan，指定逻辑计划如何在集群执行），通过成本模型（cost model）比较它们并筛选出最优的物理计划，最终结果是一系列RDD和转换（所以Spark有时也被视作编译器，将DataFrame、Dataset或SQL表达的查询转换成RDD转换）</li>
 </ol>
-<div class="remark-draw remark-draw-bob"><svg xmlns="http://www.w3.org/2000/svg" width="520" height="96">
-    <style>
-        line, path, circle, rect, polygon{stroke:black;stroke-width:2;stroke-opacity:1;fill-opacity:1;stroke-linecap:round;stroke-linejoin:miter;}text{font-family:monospace;font-size:14px;}rect.backdrop{stroke:none;fill:white;}.broken{stroke-dasharray:8;}.filled{fill:black;}.bg_filled{fill:white;}.nofill{fill:white;}.end_marked_arrow{marker-end:url(#arrow);}.start_marked_arrow{marker-start:url(#arrow);}.end_marked_diamond{marker-end:url(#diamond);}.start_marked_diamond{marker-start:url(#diamond);}.end_marked_circle{marker-end:url(#circle);}.start_marked_circle{marker-start:url(#circle);}.end_marked_open_circle{marker-end:url(#open_circle);}.start_marked_open_circle{marker-start:url(#open_circle);}.end_marked_big_open_circle{marker-end:url(#big_open_circle);}.start_marked_big_open_circle{marker-start:url(#big_open_circle);}
-        <!--separator-->
-        
-    </style>
-    <defs>
-        <marker id="arrow" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,0 0,4 4,2 0,0"></polygon>
-        </marker>
-        <marker id="diamond" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,2 2,0 4,2 2,4 0,2"></polygon>
-        </marker>
-        <marker id="circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="filled"></circle>
-        </marker>
-        <marker id="open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="bg_filled"></circle>
-        </marker>
-        <marker id="big_open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="3" class="bg_filled"></circle>
-        </marker>
-    </defs>
-    <rect class="backdrop" x="0" y="0" width="520" height="96"></rect>
-    <rect x="380" y="24" width="128" height="48" class="solid nofill" rx="0"></rect>
-    <text x="394" y="44" >Best</text>
-    <text x="394" y="60" >Physical</text>
-    <text x="466" y="60" >Plan</text>
-    <text x="314" y="28" >cost</text>
-    <text x="18" y="44" >Optimized</text>
-    <text x="218" y="44" >Physical</text>
-    <text x="314" y="44" >model</text>
-    <text x="18" y="60" >logical</text>
-    <text x="82" y="60" >plan</text>
-    <text x="218" y="60" >Plans</text>
-    <g>
-        <line x1="4" y1="24" x2="124" y2="24" class="solid"></line>
-        <line x1="4" y1="24" x2="4" y2="72" class="solid"></line>
-        <line x1="124" y1="24" x2="124" y2="72" class="solid"></line>
-        <line x1="124" y1="56" x2="192" y2="56" class="solid"></line>
-        <polygon points="192,52 200,56 192,60" class="filled"></polygon>
-        <line x1="4" y1="72" x2="124" y2="72" class="solid"></line>
-    </g>
-    <g>
-        <line x1="204" y1="24" x2="292" y2="24" class="solid"></line>
-        <line x1="204" y1="24" x2="204" y2="72" class="solid"></line>
-        <line x1="292" y1="24" x2="292" y2="72" class="solid"></line>
-        <line x1="292" y1="56" x2="368" y2="56" class="solid"></line>
-        <polygon points="368,52 376,56 368,60" class="filled"></polygon>
-        <line x1="204" y1="72" x2="292" y2="72" class="solid"></line>
-    </g>
-</svg></div>
+<div class="gatsby-highlight" data-language="bob-svg"><pre style="counter-reset: linenumber NaN" class="language-bob-svg line-numbers"><code class="language-bob-svg">
++--------------+         +----------+  cost    +---------------+
+| Optimized    |         | Physical |  model   | Best          |
+| logical plan |--------&gt;| Plans    |---------&gt;| Physical Plan |
++--------------+         +----------+          +---------------+</code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span></span></pre></div>
 <ol start="3">
 <li>执行（Execute）：Spark执行RDD代码，并在运行时进行一系列优化（生成本地Java字节码以在执行中移除整个任务或阶段），最终返回结果</li>
 </ol>
@@ -725,4 +604,4 @@
           >
             window.___chunkMapping="{\"app\":[\"/app-ad3d39f610fe80fe9edd.js\"],\"component---src-pages-404-js\":[\"/component---src-pages-404-js-c76f759449b7ac2e3392.js\"],\"component---src-pages-index-js\":[\"/component---src-pages-index-js-350e9b4aa85349fee1e3.js\"],\"component---src-pages-using-typescript-tsx\":[\"/component---src-pages-using-typescript-tsx-edf3fb598638deb63681.js\"],\"component---src-templates-blog-post-js\":[\"/component---src-templates-blog-post-js-c66e12eb4b10a9ee344e.js\"]}";
           </script>
-        <script>window.___webpackCompilationHash="c289c25b54597d67e334";</script><script src="/webpack-runtime-073445805b0b7fca898b.js" async></script><script src="/framework-379b7ea7c44f25b32429.js" async></script><script src="/app-ad3d39f610fe80fe9edd.js" async></script><!-- slice-end id="_gatsby-scripts-1" --></body></html>
+        <script>window.___webpackCompilationHash="ae6eebb7a627dd215634";</script><script src="/webpack-runtime-073445805b0b7fca898b.js" async></script><script src="/framework-379b7ea7c44f25b32429.js" async></script><script src="/app-ad3d39f610fe80fe9edd.js" async></script><!-- slice-end id="_gatsby-scripts-1" --></body></html>

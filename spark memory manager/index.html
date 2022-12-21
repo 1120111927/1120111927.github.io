@@ -31,31 +31,8 @@
 <p>堆外内存管理使得Spark可以直接在集群节点的系统内存中分配空间，存储经过序列化的二进制数据<sup id="fnref-3"><a href="#fn-3" class="footnote-ref">3</a></sup>。堆外内存可以被精确地申请和释放，而且二进制字节流形式的数据占用的内存空间也可以被精确计算。</p>
 <p>堆外内存比堆内内存更加容易管理，能够进一步优化内存的使用，减少了不必要的内存开销（例如频繁的垃圾回收），提升了处理性能。但是序列化<sup id="fnref-4"><a href="#fn-4" class="footnote-ref">4</a></sup>数据在访问时需要进行反序列化，增加了转换过程的计算开销。</p>
 <h2>静态内存管理</h2>
-<div class="remark-draw remark-draw-bob"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="32">
-    <style>
-        line, path, circle, rect, polygon{stroke:black;stroke-width:2;stroke-opacity:1;fill-opacity:1;stroke-linecap:round;stroke-linejoin:miter;}text{font-family:monospace;font-size:14px;}rect.backdrop{stroke:none;fill:white;}.broken{stroke-dasharray:8;}.filled{fill:black;}.bg_filled{fill:white;}.nofill{fill:white;}.end_marked_arrow{marker-end:url(#arrow);}.start_marked_arrow{marker-start:url(#arrow);}.end_marked_diamond{marker-end:url(#diamond);}.start_marked_diamond{marker-start:url(#diamond);}.end_marked_circle{marker-end:url(#circle);}.start_marked_circle{marker-start:url(#circle);}.end_marked_open_circle{marker-end:url(#open_circle);}.start_marked_open_circle{marker-start:url(#open_circle);}.end_marked_big_open_circle{marker-end:url(#big_open_circle);}.start_marked_big_open_circle{marker-start:url(#big_open_circle);}
-        <!--separator-->
-        
-    </style>
-    <defs>
-        <marker id="arrow" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,0 0,4 4,2 0,0"></polygon>
-        </marker>
-        <marker id="diamond" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,2 2,0 4,2 2,4 0,2"></polygon>
-        </marker>
-        <marker id="circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="filled"></circle>
-        </marker>
-        <marker id="open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="bg_filled"></circle>
-        </marker>
-        <marker id="big_open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="3" class="bg_filled"></circle>
-        </marker>
-    </defs>
-    <rect class="backdrop" x="0" y="0" width="16" height="32"></rect>
-</svg></div>
+<div class="gatsby-highlight" data-language="bob-svg"><pre style="counter-reset: linenumber NaN" class="language-bob-svg line-numbers"><code class="language-bob-svg">
+</code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span></span></pre></div>
 <p>静态内存管理模型（StaticMemoryManager）将内存空间划分为数据缓存空间、框架执行空间、用户代码空间三个分区，每个分区负责存储三种内存消耗来源中的一种，并根据经验确定三者的空间比例，数据缓存空间和框架执行空间的内存占比和界限是固定的，彼此不能互相占用内存。静态内存管理模型不支持堆外内存，Spark1.6之前的版本采用了这个方法。</p>
 <ul>
 <li>数据缓存空间（Storage memory）：空间大小由参数spark.storage.memoryFraction设置，默认为0.6。用于存储RDD缓存数据、广播数据、task的一些计算结果。Unroll内存也属于数据缓存空间的一部分</li>
@@ -70,31 +47,9 @@
 <li>静态的方式也容易造成内存资源的浪费</li>
 </ul>
 <h2>统一内存管理</h2>
-<div class="remark-draw remark-draw-bob"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="32">
-    <style>
-        line, path, circle, rect, polygon{stroke:black;stroke-width:2;stroke-opacity:1;fill-opacity:1;stroke-linecap:round;stroke-linejoin:miter;}text{font-family:monospace;font-size:14px;}rect.backdrop{stroke:none;fill:white;}.broken{stroke-dasharray:8;}.filled{fill:black;}.bg_filled{fill:white;}.nofill{fill:white;}.end_marked_arrow{marker-end:url(#arrow);}.start_marked_arrow{marker-start:url(#arrow);}.end_marked_diamond{marker-end:url(#diamond);}.start_marked_diamond{marker-start:url(#diamond);}.end_marked_circle{marker-end:url(#circle);}.start_marked_circle{marker-start:url(#circle);}.end_marked_open_circle{marker-end:url(#open_circle);}.start_marked_open_circle{marker-start:url(#open_circle);}.end_marked_big_open_circle{marker-end:url(#big_open_circle);}.start_marked_big_open_circle{marker-start:url(#big_open_circle);}
-        <!--separator-->
-        
-    </style>
-    <defs>
-        <marker id="arrow" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,0 0,4 4,2 0,0"></polygon>
-        </marker>
-        <marker id="diamond" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,2 2,0 4,2 2,4 0,2"></polygon>
-        </marker>
-        <marker id="circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="filled"></circle>
-        </marker>
-        <marker id="open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="bg_filled"></circle>
-        </marker>
-        <marker id="big_open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="3" class="bg_filled"></circle>
-        </marker>
-    </defs>
-    <rect class="backdrop" x="0" y="0" width="16" height="32"></rect>
-</svg></div>
+<div class="gatsby-highlight" data-language="bob-svg"><pre style="counter-reset: linenumber NaN" class="language-bob-svg line-numbers"><code class="language-bob-svg">
+
+</code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span></span></pre></div>
 <p>统一内存管理模型（UnifiedMemoryManager）将内存空间划分为系统保留空间、框架内存空间和用户代码空间，框架内存空间又划分为数据缓存空间和框架执行空间。当框架执行空间不足时，会将shuffle数据spill到磁盘上；当数据缓存空间不足时，Spark会进行缓存替换、移除缓存数据等操作。为了限制每个task的内存使用，也会对每个task的内存使用进行限额。</p>
 <ul>
 <li>系统保留内存（Reserved Memory）：空间大小由参数spark.testing.ReservedMemory设置，默认为300MB，用于存储Spark框架产生的内部对象（如Spark Executor对象，TaskMemoryManager对象等Spark内部对象）</li>
@@ -230,4 +185,4 @@
           >
             window.___chunkMapping="{\"app\":[\"/app-ad3d39f610fe80fe9edd.js\"],\"component---src-pages-404-js\":[\"/component---src-pages-404-js-c76f759449b7ac2e3392.js\"],\"component---src-pages-index-js\":[\"/component---src-pages-index-js-350e9b4aa85349fee1e3.js\"],\"component---src-pages-using-typescript-tsx\":[\"/component---src-pages-using-typescript-tsx-edf3fb598638deb63681.js\"],\"component---src-templates-blog-post-js\":[\"/component---src-templates-blog-post-js-c66e12eb4b10a9ee344e.js\"]}";
           </script>
-        <script>window.___webpackCompilationHash="c289c25b54597d67e334";</script><script src="/webpack-runtime-073445805b0b7fca898b.js" async></script><script src="/framework-379b7ea7c44f25b32429.js" async></script><script src="/app-ad3d39f610fe80fe9edd.js" async></script><!-- slice-end id="_gatsby-scripts-1" --></body></html>
+        <script>window.___webpackCompilationHash="ae6eebb7a627dd215634";</script><script src="/webpack-runtime-073445805b0b7fca898b.js" async></script><script src="/framework-379b7ea7c44f25b32429.js" async></script><script src="/app-ad3d39f610fe80fe9edd.js" async></script><!-- slice-end id="_gatsby-scripts-1" --></body></html>

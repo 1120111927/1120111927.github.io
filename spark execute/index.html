@@ -414,126 +414,17 @@
 <li>1.4版本时，Tungsten引入了UnSafe Shuffle机制来优化内存和CPU的使用，并在1.6版本中进行代码优化，统一实现到Sort Shuffle中，通过Shuffle管理器自动选择最佳Shuffle方式</li>
 <li>到2.0版本时，Hash Shuffle的实现从Spark中删除了，所有Shuffle方式全部统一到Sort Shuffle一个实现中</li>
 </ul>
-<div class="remark-draw remark-draw-bob"><svg xmlns="http://www.w3.org/2000/svg" width="568" height="192">
-    <style>
-        line, path, circle, rect, polygon{stroke:black;stroke-width:2;stroke-opacity:1;fill-opacity:1;stroke-linecap:round;stroke-linejoin:miter;}text{font-family:monospace;font-size:14px;}rect.backdrop{stroke:none;fill:white;}.broken{stroke-dasharray:8;}.filled{fill:black;}.bg_filled{fill:white;}.nofill{fill:white;}.end_marked_arrow{marker-end:url(#arrow);}.start_marked_arrow{marker-start:url(#arrow);}.end_marked_diamond{marker-end:url(#diamond);}.start_marked_diamond{marker-start:url(#diamond);}.end_marked_circle{marker-end:url(#circle);}.start_marked_circle{marker-start:url(#circle);}.end_marked_open_circle{marker-end:url(#open_circle);}.start_marked_open_circle{marker-start:url(#open_circle);}.end_marked_big_open_circle{marker-end:url(#big_open_circle);}.start_marked_big_open_circle{marker-start:url(#big_open_circle);}
-        <!--separator-->
-        
-    </style>
-    <defs>
-        <marker id="arrow" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,0 0,4 4,2 0,0"></polygon>
-        </marker>
-        <marker id="diamond" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,2 2,0 4,2 2,4 0,2"></polygon>
-        </marker>
-        <marker id="circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="filled"></circle>
-        </marker>
-        <marker id="open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="bg_filled"></circle>
-        </marker>
-        <marker id="big_open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="3" class="bg_filled"></circle>
-        </marker>
-    </defs>
-    <rect class="backdrop" x="0" y="0" width="568" height="192"></rect>
-    <text x="482" y="12" >,</text>
-    <text x="106" y="28" >,</text>
-    <text x="282" y="28" >,</text>
-    <text x="354" y="28" >Hash</text>
-    <text x="394" y="28" >Shuffle</text>
-    <line x1="484" y1="16" x2="484" y2="64" class="solid"></line>
-    <text x="10" y="44" >Hash</text>
-    <text x="50" y="44" >Shuffle</text>
-    <text x="170" y="44" >Hash</text>
-    <text x="210" y="44" >Shuffle</text>
-    <text x="354" y="44" >&amp;</text>
-    <text x="370" y="44" >Sort</text>
-    <text x="410" y="44" >Shuffle</text>
-    <text x="106" y="60" >`</text>
-    <text x="170" y="60" >&amp;</text>
-    <text x="186" y="60" >Sort</text>
-    <text x="226" y="60" >Shuffle</text>
-    <text x="354" y="60" >&amp;</text>
-    <text x="370" y="60" >Unsafe</text>
-    <text x="426" y="60" >Shuffle</text>
-    <text x="282" y="76" >`</text>
-    <text x="482" y="76" >`</text>
-    <text x="274" y="124" >,</text>
-    <text x="554" y="124" >,</text>
-    <text x="74" y="140" >Hash</text>
-    <text x="114" y="140" >Shuffle</text>
-    <path d="M 376,128 A 16,16 0,0,0 376,144" class="nofill"></path>
-    <text x="378" y="140" >Tungsten</text>
-    <path d="M 440,128 A 16,16 0,0,1 440,144" class="nofill"></path>
-    <text x="458" y="140" >Sort</text>
-    <text x="498" y="140" >Shuffle</text>
-    <line x1="556" y1="128" x2="556" y2="144" class="solid"></line>
-    <text x="74" y="156" >&amp;</text>
-    <path d="M 96,144 A 16,16 0,0,0 96,160" class="nofill"></path>
-    <text x="98" y="156" >Tungsten</text>
-    <path d="M 160,144 A 16,16 0,0,1 160,160" class="nofill"></path>
-    <text x="178" y="156" >Sort</text>
-    <text x="218" y="156" >Shuffle</text>
-    <text x="554" y="156" >`</text>
-    <text x="274" y="172" >`</text>
-    <g>
-        <path d="M 352,8 A 4,4 0,0,0 348,12" class="nofill"></path>
-        <line x1="348" y1="12" x2="348" y2="68" class="solid"></line>
-        <line x1="352" y1="8" x2="480" y2="8" class="solid"></line>
-        <path d="M 348,68 A 4,4 0,0,0 352,72" class="nofill"></path>
-        <line x1="352" y1="72" x2="480" y2="72" class="solid"></line>
-        <line x1="412" y1="72" x2="412" y2="104" class="solid"></line>
-        <line x1="12" y1="104" x2="412" y2="104" class="solid"></line>
-        <line x1="12" y1="104" x2="12" y2="136" class="solid"></line>
-        <line x1="12" y1="136" x2="56" y2="136" class="solid"></line>
-        <polygon points="56,132 64,136 56,140" class="filled"></polygon>
-    </g>
-    <g>
-        <path d="M 8,24 A 4,4 0,0,0 4,28" class="nofill"></path>
-        <line x1="4" y1="28" x2="4" y2="52" class="solid"></line>
-        <line x1="8" y1="24" x2="104" y2="24" class="solid"></line>
-        <path d="M 4,52 A 4,4 0,0,0 8,56" class="nofill"></path>
-        <line x1="8" y1="56" x2="104" y2="56" class="solid"></line>
-    </g>
-    <g>
-        <path d="M 168,24 A 4,4 0,0,0 164,28" class="nofill"></path>
-        <line x1="164" y1="28" x2="164" y2="68" class="solid"></line>
-        <line x1="168" y1="24" x2="280" y2="24" class="solid"></line>
-        <path d="M 164,68 A 4,4 0,0,0 168,72" class="nofill"></path>
-        <line x1="168" y1="72" x2="280" y2="72" class="solid"></line>
-    </g>
-    <g>
-        <line x1="108" y1="32" x2="108" y2="48" class="solid"></line>
-        <line x1="108" y1="40" x2="152" y2="40" class="solid"></line>
-        <polygon points="152,36 160,40 152,44" class="filled"></polygon>
-    </g>
-    <g>
-        <line x1="284" y1="32" x2="284" y2="64" class="solid"></line>
-        <line x1="284" y1="40" x2="336" y2="40" class="solid"></line>
-        <polygon points="336,36 344,40 336,44" class="filled"></polygon>
-    </g>
-    <g>
-        <path d="M 72,120 A 4,4 0,0,0 68,124" class="nofill"></path>
-        <line x1="68" y1="124" x2="68" y2="164" class="solid"></line>
-        <line x1="72" y1="120" x2="272" y2="120" class="solid"></line>
-        <path d="M 68,164 A 4,4 0,0,0 72,168" class="nofill"></path>
-        <line x1="72" y1="168" x2="272" y2="168" class="solid"></line>
-    </g>
-    <g>
-        <path d="M 368,120 A 4,4 0,0,0 364,124" class="nofill"></path>
-        <line x1="364" y1="124" x2="364" y2="148" class="solid"></line>
-        <line x1="368" y1="120" x2="552" y2="120" class="solid"></line>
-        <path d="M 364,148 A 4,4 0,0,0 368,152" class="nofill"></path>
-        <line x1="368" y1="152" x2="552" y2="152" class="solid"></line>
-    </g>
-    <g>
-        <line x1="276" y1="128" x2="276" y2="160" class="solid"></line>
-        <line x1="276" y1="136" x2="352" y2="136" class="solid"></line>
-        <polygon points="352,132 360,136 352,140" class="filled"></polygon>
-    </g>
-</svg></div>
+<div class="gatsby-highlight" data-language="bob-svg"><pre style="counter-reset: linenumber NaN" class="language-bob-svg line-numbers"><code class="language-bob-svg">                                           ,----------------,
+,------------,      ,--------------,       |Hash Shuffle    |
+|Hash Shuffle|-----&gt;|Hash Shuffle  |------&gt;|&amp; Sort Shuffle  |
+`------------`      |&amp; Sort Shuffle|       |&amp; Unsafe Shuffle|
+                    `--------------`       `-------+--------`
+                                                   |
+ +-------------------------------------------------+
+ |      ,-------------------------,          ,-----------------------,
+ +-----&gt;|Hash Shuffle             |---------&gt;|(Tungsten) Sort Shuffle|
+        |&amp; (Tungsten) Sort Shuffle|          `-----------------------`
+        `-------------------------`</code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre></div>
 <h3>基于Hash的Shuffle写操作</h3>
 <p>主要思想是按照Hash的方式在每个ShuffleMapTask中为每个ShuffleReduceTask生成一个文件。</p>
 <p>每一个ShuffleMapTask会根据ShuffleReduceTask的数量创建出相应的桶（bucket）<sup id="fnref-5"><a href="#fn-5" class="footnote-ref">5</a></sup>，桶的数量是M*R（M是ShuffleMapTask的个数，R是ShuffleReduceTask的个数），ShuffleMapTask生成的结果会根据设置的分区（Partition）算法填充到每个桶中。当Reduce启动时，会根据任务的编号和所依赖的ShuffleMapTask的编号从远端或本地取得相应的桶作为Reduce任务的输入进行处理。</p>
@@ -725,4 +616,4 @@
           >
             window.___chunkMapping="{\"app\":[\"/app-ad3d39f610fe80fe9edd.js\"],\"component---src-pages-404-js\":[\"/component---src-pages-404-js-c76f759449b7ac2e3392.js\"],\"component---src-pages-index-js\":[\"/component---src-pages-index-js-350e9b4aa85349fee1e3.js\"],\"component---src-pages-using-typescript-tsx\":[\"/component---src-pages-using-typescript-tsx-edf3fb598638deb63681.js\"],\"component---src-templates-blog-post-js\":[\"/component---src-templates-blog-post-js-c66e12eb4b10a9ee344e.js\"]}";
           </script>
-        <script>window.___webpackCompilationHash="c289c25b54597d67e334";</script><script src="/webpack-runtime-073445805b0b7fca898b.js" async></script><script src="/framework-379b7ea7c44f25b32429.js" async></script><script src="/app-ad3d39f610fe80fe9edd.js" async></script><!-- slice-end id="_gatsby-scripts-1" --></body></html>
+        <script>window.___webpackCompilationHash="ae6eebb7a627dd215634";</script><script src="/webpack-runtime-073445805b0b7fca898b.js" async></script><script src="/framework-379b7ea7c44f25b32429.js" async></script><script src="/app-ad3d39f610fe80fe9edd.js" async></script><!-- slice-end id="_gatsby-scripts-1" --></body></html>

@@ -701,105 +701,15 @@ consumerProperties<span class="token punctuation">.</span><span class="token fun
 <h3>高水位</h3>
 <p>Kafka中水位是用消息位移来表征的。</p>
 <p>在Kafka中，高水位（High Watermark）的作用有两个：一是定义消息可见性，即用来标识分区下的哪些消息是可以被消费者消费的；一是帮助Kafka完成副本同步。</p>
-<div class="remark-draw remark-draw-bob"><svg xmlns="http://www.w3.org/2000/svg" width="360" height="160">
-    <style>
-        line, path, circle, rect, polygon{stroke:black;stroke-width:2;stroke-opacity:1;fill-opacity:1;stroke-linecap:round;stroke-linejoin:miter;}text{font-family:monospace;font-size:14px;}rect.backdrop{stroke:none;fill:white;}.broken{stroke-dasharray:8;}.filled{fill:black;}.bg_filled{fill:white;}.nofill{fill:white;}.end_marked_arrow{marker-end:url(#arrow);}.start_marked_arrow{marker-start:url(#arrow);}.end_marked_diamond{marker-end:url(#diamond);}.start_marked_diamond{marker-start:url(#diamond);}.end_marked_circle{marker-end:url(#circle);}.start_marked_circle{marker-start:url(#circle);}.end_marked_open_circle{marker-end:url(#open_circle);}.start_marked_open_circle{marker-start:url(#open_circle);}.end_marked_big_open_circle{marker-end:url(#big_open_circle);}.start_marked_big_open_circle{marker-start:url(#big_open_circle);}
-        <!--separator-->
-        
-    </style>
-    <defs>
-        <marker id="arrow" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,0 0,4 4,2 0,0"></polygon>
-        </marker>
-        <marker id="diamond" viewBox="-2 -2 8 8" refX="4" refY="2" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <polygon points="0,2 2,0 4,2 2,4 0,2"></polygon>
-        </marker>
-        <marker id="circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="filled"></circle>
-        </marker>
-        <marker id="open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="2" class="bg_filled"></circle>
-        </marker>
-        <marker id="big_open_circle" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <circle cx="4" cy="4" r="3" class="bg_filled"></circle>
-        </marker>
-    </defs>
-    <rect class="backdrop" x="0" y="0" width="360" height="160"></rect>
-    <text x="10" y="60" >0</text>
-    <text x="26" y="60" >1</text>
-    <text x="42" y="60" >2</text>
-    <text x="58" y="60" >3</text>
-    <text x="74" y="60" >4</text>
-    <text x="90" y="60" >5</text>
-    <text x="106" y="60" >6</text>
-    <text x="122" y="60" >7</text>
-    <text x="138" y="60" >8</text>
-    <text x="154" y="60" >9</text>
-    <text x="170" y="60" >10</text>
-    <text x="194" y="60" >11</text>
-    <text x="218" y="60" >12</text>
-    <text x="242" y="60" >13</text>
-    <text x="266" y="60" >14</text>
-    <text x="290" y="60" >15!</text>
-    <text x="138" y="124" >水</text>
-    <text x="242" y="140" >Log</text>
-    <text x="274" y="140" >End</text>
-    <text x="306" y="140" >Offset</text>
-    <text x="122" y="124" >高</text>
-    <text x="154" y="124" >位</text>
-    <g>
-        <line x1="4" y1="16" x2="4" y2="72" class="solid"></line>
-        <line x1="308" y1="16" x2="308" y2="48" class="solid"></line>
-        <line x1="4" y1="40" x2="308" y2="40" class="broken"></line>
-        <line x1="20" y1="40" x2="20" y2="72" class="solid"></line>
-        <line x1="36" y1="40" x2="36" y2="72" class="solid"></line>
-        <line x1="52" y1="40" x2="52" y2="72" class="solid"></line>
-        <line x1="68" y1="40" x2="68" y2="72" class="solid"></line>
-        <line x1="84" y1="40" x2="84" y2="72" class="solid"></line>
-        <line x1="100" y1="40" x2="100" y2="72" class="solid"></line>
-        <line x1="116" y1="40" x2="116" y2="72" class="solid"></line>
-        <line x1="148" y1="40" x2="148" y2="72" class="solid"></line>
-        <line x1="164" y1="40" x2="164" y2="72" class="solid"></line>
-        <line x1="188" y1="40" x2="188" y2="72" class="solid"></line>
-        <line x1="212" y1="40" x2="212" y2="72" class="solid"></line>
-        <line x1="236" y1="40" x2="236" y2="72" class="solid"></line>
-        <line x1="260" y1="40" x2="260" y2="72" class="solid"></line>
-        <line x1="284" y1="40" x2="284" y2="72" class="solid"></line>
-        <line x1="4" y1="72" x2="308" y2="72" class="broken"></line>
-        <line x1="308" y1="64" x2="308" y2="72" class="solid"></line>
-        <line x1="132" y1="16" x2="132" y2="72" class="solid"></line>
-    </g>
-    <g>
-        <text x="26" y="28">已</text>
-        <text x="42" y="28">提</text>
-        <text x="58" y="28">交</text>
-        <text x="74" y="28">消</text>
-        <text x="90" y="28">息</text>
-    </g>
-    <g>
-        <text x="178" y="28">未</text>
-        <text x="194" y="28">提</text>
-        <text x="210" y="28">交</text>
-        <text x="226" y="28">消</text>
-        <text x="242" y="28">息</text>
-    </g>
-    <g>
-        <polygon points="136,92 140,80 144,92" class="filled"></polygon>
-        <line x1="140" y1="92" x2="140" y2="112" class="solid"></line>
-    </g>
-    <g>
-        <polygon points="288,92 292,80 296,92" class="filled"></polygon>
-        <line x1="292" y1="92" x2="292" y2="112" class="solid"></line>
-    </g>
-    <g>
-        <text x="250" y="124">日</text>
-        <text x="266" y="124">志</text>
-        <text x="282" y="124">末</text>
-        <text x="298" y="124">端</text>
-        <text x="314" y="124">位</text>
-        <text x="330" y="124">移</text>
-    </g>
-</svg></div>
+<div class="gatsby-highlight" data-language="bob-svg"><pre style="counter-reset: linenumber NaN" class="language-bob-svg line-numbers"><code class="language-bob-svg">
+|  已提交消息   |     未提交消息      |
++-+-+-+-+-+-+-+-+-+-+--+--+--+--+--+~~+
+|0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15!
++-+-+-+-+-+-+-+-+-+-+--+--+--+--+--+~~+
+                 ^                  ^
+                 |                  |
+               高水位          日志末端位移
+                              Log End Offset</code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre></div>
 <p>高水位标记第一条未提交消息的位移值，日志末端位移（Log End Offset，LEO）表示副本写入下一条消息的位移值。同一副本对象，其高水位值不会大于LEO值。在分区高水位以下的消息被认为是已提交消息，反之，即介于高水位和LEO之间的消息就是未提交消息，消费者只能消费已提交消息。高水位和LEO是副本对象的两个重要属性，所有副本都有对应的高水位和LEO值，分区的高水位就是其Leader副本的高水位。每个副本对象都保存了一组高水位值和LEO值，领导者副本所在的Broker上还保存了追随者副本的LEO值，把领导者副本所在Broker上保存的追随者副本称为远程副本（Remote Replica）。Kafka副本机制在运行过程中，会更新追随者副本上的高水位和LEO值，同时也会更新领导者副本的高水位和LEO以及所有远程副本的LEO，但不会更新远程副本的高水位值。远程副本用于确定分区高水位。追随者副本满足以下两个条件时，被认为与Leader副本保持同步：一是追随者副本在ISR中；一是追随者副本LEO值落后于领导者副本LEO值的时间，不超过Broker端配置项replica.tag.time.max.ms的值（默认为10s）。</p>
 <p>领导者副本处理生产者请求的逻辑如下：</p>
 <ol>
@@ -983,4 +893,4 @@ StopReplica请求用于下线副本</p>
           >
             window.___chunkMapping="{\"app\":[\"/app-ad3d39f610fe80fe9edd.js\"],\"component---src-pages-404-js\":[\"/component---src-pages-404-js-c76f759449b7ac2e3392.js\"],\"component---src-pages-index-js\":[\"/component---src-pages-index-js-350e9b4aa85349fee1e3.js\"],\"component---src-pages-using-typescript-tsx\":[\"/component---src-pages-using-typescript-tsx-edf3fb598638deb63681.js\"],\"component---src-templates-blog-post-js\":[\"/component---src-templates-blog-post-js-c66e12eb4b10a9ee344e.js\"]}";
           </script>
-        <script>window.___webpackCompilationHash="c289c25b54597d67e334";</script><script src="/webpack-runtime-073445805b0b7fca898b.js" async></script><script src="/framework-379b7ea7c44f25b32429.js" async></script><script src="/app-ad3d39f610fe80fe9edd.js" async></script><!-- slice-end id="_gatsby-scripts-1" --></body></html>
+        <script>window.___webpackCompilationHash="ae6eebb7a627dd215634";</script><script src="/webpack-runtime-073445805b0b7fca898b.js" async></script><script src="/framework-379b7ea7c44f25b32429.js" async></script><script src="/app-ad3d39f610fe80fe9edd.js" async></script><!-- slice-end id="_gatsby-scripts-1" --></body></html>
