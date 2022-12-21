@@ -39,7 +39,14 @@ module.exports = {
       resolve: `gatsby-transformer-remark`,
       options: {
         plugins: [
-          `gatsby-remark-draw`,
+          {
+            resolve: `gatsby-remark-draw`,
+            options: {
+                bob: {
+                    fontFamily: 'Fira Code'
+                }
+            }
+          },
           {
             resolve: `gatsby-remark-katex`,
             options: {
