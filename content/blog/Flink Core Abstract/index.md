@@ -43,7 +43,7 @@ RemoteStreamEnvironment：表示远程Flink集群的执行环境，基本工作�
 数据流元素（StreamElement）有数据记录（StreamRecord）、延迟标记（LatencyMarker）、水印（Watermark）、流状态标记（StreamStatus）4种，在执行层面上都被序列化成二进制数据，形成混合的数据流，在算子中将混合数据流中的数据流元素反序列化出来，根据其类型分别进行处理。
 
 + StreamRecord：表示数据流中的一条记录（或一个事件），包括数据值本身和事件时间戳（可选）
-+ LatencyMarker：用来近似评估延迟，在Source中创建，并向下游发送，绕过业务处理逻辑，在Sink节点中使用LatencyMarker估计数据在整个DAG图中流转花费的时间，用来近似评估总体上的处理延迟，包括在数据源算子中周期性创建的时间戳、算子编号、数据源算子所在的Task编号
++ LatencyMarker：用来近似评估数据从读取到写出之间的延迟^[不包含计算的延迟]，在Source中创建，并向下游发送，绕过业务处理逻辑，在Sink节点中使用LatencyMarker估计数据在整个DAG图中流转花费的时间，用来近似评估总体上的处理延迟，包括在数据源算子中周期性创建的时间戳、算子编号、数据源算子所在的Task编号
 + Watermark：是一个事件戳，用来告诉算子所有时间早于等于Watermark的记录（或事件）都已到达，不会再有比Watermark更早的记录，算子可以根据Watermark出发窗口的计算、清理资源等
 + StreamStatus：在数据源算子中生成，向下游沿着Dataflow传播，用来通知Task是否会继续接收到上游的记录或者Watermark，可以表示两种状态空闲状态（IDLE）和活动状态（ACTIVE）
 
