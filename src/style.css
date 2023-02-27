@@ -165,6 +165,11 @@ p {
   padding: var(--spacing-0);
 }
 
+strong {
+  font-size: var(--fontSize-2);
+  color: var(--color-primary);
+}
+
 ul,
 ol {
   margin-left: var(--spacing-0);
@@ -241,6 +246,7 @@ a:focus {
 
 .global-wrapper {
   margin: var(--spacing-0) auto;
+  margin-right: 430px;
   max-width: var(--maxWidth-wrapper);
   padding: var(--spacing-10) var(--spacing-5);
 }
@@ -343,4 +349,41 @@ a:focus {
   padding: 0;
   padding-left: 2.8em;
   overflow: initial;
+}
+
+.remark-draw {
+  overflow: auto;
+}
+
+.table-of-contents {
+  background-color: #ffffff;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 400px;
+  overflow: auto;
+  border-left-style: solid;
+  border-left-color: #000000;
+  border-width: 1px;
+  z-index: 999;
+}
+
+.table-of-contents a {
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.table-of-contents a:hover {
+  color: var(--color-primary);
+  font-size: var(--fontSize-2);
+}
+
+@media (max-width: 1000px) {
+  .table-of-contents {
+    display: none;
+  }
+  .global-wrapper {
+    margin-right: auto;
+  }
 }

@@ -5,19 +5,36 @@ description: MapReduce是一种编程模型，用于处理和生成大型数据�
 tags:
 ---
 
-MapReduce是一种编程模型，用于处理和生成大型数据集，设计灵感来源于Lisp等函数式语言中存在的map和reduce原语。用户通过指定一个用来处理键值对的map函数来生成一个中间键值对集合，然后再指定一个reduce函数来合并所有的具有相同中间key的中间value。通过MapReduce接口实现大规模计算的自动并行化和分布式执行，用户无须关心并行化、容错、数据分发以及负载均衡等细节。
+```toc
+ordered: true
+class-name: "table-of-contents"
+```
 
-MapReduce模型采用分治思想将作业划分成并行运行的任务来缩短作业整体运行时间。
+MapReduce是一种编程模型，用于处理和生成大型数据集，设计灵感来源于Lisp等函数式语言中存在的map和reduce原语，采用分治思想将作业划分成并行运行的任务来缩短作业整体运行时间。用户通过指定map函数和reduce函数来执行并行化、分布式的大规模计算而无须关心并行化、容错、数据分发以及负载均衡等细节。
 
-MapReduce程序将一个键值对集合作为输入，并生成一个键值对集合作为输出。Map函数接收输入，并生成一个中间键值对集合；MapReduce框架会将所有共用一个键的值组合在一起，并将它们传递给Reduce函数；Reduce函数接收一个中间键以及该键的值的集合作为输入，它会将这些值合并在一起，以此来生成一组更小的值的集合。通常每次调用Reduce函数所产生的值的结果只有0个或者1个，中间值通过一个迭代器^[这样可以处理因为数据量太大而无法存放在内存中的存储值的列表（list）]来传递给用户所编写的Reduce函数。
+MapReduce程序将一个键值对集合作为输入，并生成一个键值对集合作为输出。map函数接收输入，并生成一个中间键值对集合；MapReduce框架会将所有共用一个键的值组合在一起，并将它们传递给reduce函数；reduce函数接收一个中间键以及该键的值的集合作为输入（中间值通过一个迭代器^[这样可以处理因为数据量太大而无法存放在内存中的存储值的列表（list）]来传递给用户所编写的Reduce函数），它会将这些值合并在一起，以此来生成一组更小的值的集合。通常每次调用reduce函数所产生的值的结果只有0个或者1个。
 
 ## Hadoop MapReduce
 
-MRv1主要由编程模型（MapReduce API）、资源管理与作业控制模块（由JobTracker和TaskTracker组成）和数据处理引擎（由MakTask和ReduceTask组成）三部分组成，存在单点故障、扩展性差等问题。MapReduce On YARN（即MRv2）在编程模型和数据处理引擎方面的实现是一样的，资源管理模块由YARN实现，作业控制模块实现为YARN上的一个ApplicationMaster组件。MRAppMaster是MapReduce的ApplicationMaster实现，负责管理MapReduce作业的生命周期，包括作业管理、资源申请与再分配、Container启动与释放、作业恢复等。
+MRv1主要由编程模型（MapReduce API）、资源管理与作业控制模块（由JobTracker和TaskTracker组成）和数据处理引擎（由MakTask和ReduceTask组成）三部分组成，存在单点故障、扩展性差等问题。MapReduce On YARN（即MRv2）在编程模型和数据处理引擎方面的实现是一样的，资源管理模块由YARN实现，作业控制模块实现为YARN上的一个ApplicationMaster组件，即MRAppMaster，负责管理MapReduce作业的生命周期，包括作业管理、资源申请与再分配、Container启动与释放、作业恢复等。
 
 ### MapReduce作业运行过程
 
-通过调用Job对象的`submit()`或`waitForCompletion()`（提交之前没有提交过的作业并等待它完成，内部调用`submit()`）方法运行MR作业。
+MapReduce作业运行入口为`Job#Submit()`或`Job#waitForCompletion`（提交之前没有提交过的作业并等待它完成，内部调用`submit()`）。
+
+```Java
+// 创建一个作业
+Job job = Job.getInstance();
+job.setJarByClass(MyJob.class);
+// 设置作业的各种参数
+job.setJobName("myjob");
+job.setInputPath(new Path("in"));
+job.setOutputPath(new Path("out"));
+job.setMapperClass(MyJob.MyMapper.class);
+job.setReducerClass(MyJob.MyReducer.class);
+// 提交作业
+job.submit()      // 或者 job.waitForCompletion(true);
+```
 
 MR作业运行过程涉及以下5个组件：
 
@@ -32,39 +49,39 @@ MR作业运行过程涉及以下5个组件：
 | client node                         |                                  | resource manager node     |
 | .---------------------------------. |                                  | .-----------------------. |
 | | client JVM                      | |                                  | | client JVM            | |
-| | .---------.             .-----. | |      2: get new application      | |   .-----------------. | |
-| | |MapReduce| 1: run job  |     |-+-+----------------------------------+-+-->|                 | | |
-| | | program |------------>| Job | | |      3: submit application       | |   | ResourceManager | | |
+| | .---------.             .-----. | |    1.2: get new application      | |   .-----------------. | |
+| | |MapReduce|1.1:run job  |     |-+-+----------------------------------+-+-->|                 | | |
+| | | program |------------>| Job | | |    1.4: submit application       | |   | ResourceManager | | |
 | | |         |             |     |-+-+----------------------------------+-+-->|                 | | |
 | | '---------'             '--+--' | |                                  | |   '----+--------+---' | |
 | |                            |    | |                                  | |        |        ^     | |
 | '----------------------------+----' |                                  | '--------+--------|-----' |
 |                              |      |                                  |          |        |       |
 '------------------------------+------'                                  '----------+--------+-------'
-                               |                                5a: start container |        |
+                               |                             2.1.1: start container |        |
                                |                                  .-----------------'        |
                                |                                  |                          |
                                |              .-------------------|-----.                    |
                                |              | node manager node v     |                    |
                                |              |  .----------------+--.  |                    |
-                 3: copy job   |              |  |    NodeManager    |  |                    |
-                    resources  |              |  '----------+--------'  |8: allocate resource|
-                               |              |  5b: launch |    +------+--------------------'
+               1.3: copy job   |              |  |    NodeManager    |  |                    |
+                    resources  |              |  '----------+--------'  |3: allocate resource|
+                               |              |2.1.2:launch |    +------+--------------------'
                                |              |             |    |      |
-                               | 6: initialize|             v    |      |                .-----------------------.
+                               |2.2:initialize|             v    |      |                .-----------------------.
                                |    job       |  .---------------+---.  |                | node manager node     |
-                               |    +---------+--+                   |  | 9a: start      |  .-------------.      |
+                               |    +---------+--+                   |  |4.1.1:start     |  .-------------.      |
                                |    |         |  |    MRAppMaster    +--+----------------|->+ NodeManager |      |
                                |    +---------+->|                   |  |     container  |  '------+------'      |
                                |              |  '----------+--------'  |                |         |             |
-                               |              |             |           |                |9a:launch|             |
+                               |              |             |           |                |         |4.1.2:launch |
                                |              '-------------+-----------'                |         v             |
-                               v        7: retrieve         |                            |  .-----------------.  |
+                               v       2.3:retrieve         |                            |  .-----------------.  |
                      .---------+------.    input splits     |                            |  | task JVM        |  |
                      |    Shared      |<--------------------+                            |  |  .-----------.  |  |
                      |  Filesystem    +<-------------------------------------------------+--+--+ YarnChild |  |  |
-                     '----------------'            10: retrieve job resources            |  |  '-----+-----'  |  |
-                                                                                         |  | 11: run|        |  |
+                     '----------------'            4.2: retrieve job resources           |  |  '-----+-----'  |  |
+                                                                                         |  |4.3: run|        |  |
                                                                                          |  |        v        |  |
                                                                                          |  |  .------------. |  |
                                                                                          |  |  |  MapTask   | |  |
@@ -75,69 +92,294 @@ MR作业运行过程涉及以下5个组件：
                                                                                          '-----------------------'
 ```
 
-`JobSubmitter`实现的作业提交运行过程包括以下几个步骤：
+作业提交运行过程包括以下几个步骤：
 
-1. `Job`的`submit()`方法创建一个`JobSubmitter`实例并调用其`submitJobInternal()`方法
-2. `JobSubmitter`向资源管理器请求一个新应用ID并将其设置为MR作业的作业ID
-3. `JobSubmitter`将运行作业所需要的资源（包括作业JAR文件、配置文件和输入分片）复制到共享系统上一个以作业ID命名的目录下
-4. `JobSubmitter`调用资源管理器的`submitJob()`方法提交作业
-5.
-    1. 资源管理器收到调用它的`submitJob()`消息后，将请求传递给YARN调度器（scheduler），调度器分配一个容器
-    2. 资源管理器在节点管理器的管理下在容器中启动Application Master进程
-6. MR Application Master创建多个对象来接收来自任务的进度和完成报告，进而跟踪作业进度
-7. MR Application Master从共享文件系统获取输入分片，为每个分片创建一个map任务对象，并创建属性`mapreduce.job.reduces`指定数目的reduce任务对象
-8. MR Application Master为该作业的所有map任务和reduce任务向资源管理器申请容器
-9.
-    1. 资源管理器的调度器为任务分配容器后，MR Application Master与容器所在结点的节点管理器通信启动容器
-    2. 节点管理器在单独的JVM中启动`YarnChild`
-10. `YarnChild`获取任务运行需要的资源（包括作业的配置、JAR文件和所有来自分布式缓存的文件）
-11. `YarnChild`运行map任务或reduce任务
+1. 作业提交：主要为后续作业执行准备环境，主要涉及创建目录、上传文件等操作
+    1. `Job`的`submit()`方法创建一个`JobSubmitter`实例并调用其`submitJobInternal()`方法
+    2. `JobSubmitter`向资源管理器请求一个新应用ID并将其设置为MR作业的作业ID
+    3. `JobSubmitter`将运行作业所需要的资源（包括作业JAR文件、配置文件和输入分片）复制到共享系统上一个以作业ID命名的目录下
+    4. `JobSubmitter`调用资源管理器的`submitJob()`方法提交作业
+2. 作业初始化：主要工作是根据输入数据量和作业配置参数将作业分解成若干个Map Task以及Reduce Task，并添加到相关数据结构中，以等待后续被调度执行
+    1. 启动MRAppMaster
+        1. 资源管理器收到调用它的`submitJob()`消息后，将请求传递给YARN调度器（scheduler），调度器分配一个容器
+        2. 资源管理器在节点管理器的管理下在容器中启动MRAppMaster进程
+    2. MRAppMaster创建多个对象来接收来自任务的进度和完成报告，进而跟踪作业进度
+    3. MRAppMaster从共享文件系统获取输入分片，为每个分片创建一个map任务对象，并创建属性`mapreduce.job.reduces`指定数目的reduce任务对象
+3. 分配容器：MRAppMaster为该作业的所有map任务和reduce任务向资源管理器申请容器。首先为Map Task申请容器，直到有5%Map Task完成时才开始为Reduce Task申请容器。
+4. 任务执行
+    1. 启动YARNChild
+        1. 资源管理器的调度器为任务分配容器后，MR Application Master与容器所在结点的节点管理器通信启动容器
+        2. 节点管理器在单独的JVM中启动`YarnChild`
+    2. `YarnChild`获取任务运行需要的资源（包括作业的配置、JAR文件和所有来自分布式缓存的文件）
+    3. `YarnChild`运行map任务或reduce任务
 
 #### 作业提交
 
-作业提交主要为后续作业执行准备环境，主要涉及创建目录、上传文件等操作。
+```Java
+class Job extends JobContextImpl implements JobContext {
+    // Job的submit()方法内部调用JobSubmitter实例的submitJobInternal()方法，最终通过调用ClientProtocol的submitJobInternal()方法提交作业
+    void submit() {
+        /** 根据配置项mapreduce.framework.name通过Java SPI机制加载ClientProtocolProvider和ClientProtocol，默认为LocalClientProtocolProvider和LocalJobRunner
+          *
+          * hadoop-mapreduce-client-jobclient和hadoop-mapreduce-client-common下目录META-INF/services下的文件org.apache.hadoop.mapreduce.protocol.ClientProtocolProvider，分别为org.apache.hadoop.mapred.LocalClientProtocolProvider和org.apache.hadoop.mapred.YarnClientProtocolProvider
+          *
+          * Iterable<ClientProtocolProvider> frameworkLoader = ServiceLoader.load(ClientProtocolProvider.class);
+          * for (ClientProtocolProvider provider : providerList) {
+          *     ClientProtocol clientProtocol = provider.create(conf);
+          *     if (clientProtocol != null) {
+          *         clientProtocolProvider = provider;
+          *         client = clientProtocol;
+          *         break;
+          *     }
+          * }
+          * 对于LocalClientProtocolProvider，create()方法为
+          * ClientProtocol create(Configuration conf) {
+          *     String framework = conf.get(MRConfig.FRAMEWORK_NAME, MRConfig.LOCAL_FRAMEWORK_NAME);
+          *     if (!MRConfig.LOCAL_FRAMEWORK_NAME.equals(framework)) {
+          *         return null;
+          *     }
+          *     conf.setInt(JobContext.NUM_MAPS, 1);
+          *     return new LocalJobRunner(conf);
+          * }
+          * 对于YarnClientProtocolProvider，create()方法为
+          * ClientProtocol create(Configuration conf) {
+          *     if (MRConfig.YARN_FRAMEWORK_NAME.equals(conf.get(MRConfig.FRAMEWORK_NAME))) {
+          *         return new YARNRunner(conf);
+          *     }
+          *     return null;
+          * }
+          */
+        connect();
+        JobSubmitter submitter = getJobSubmitter(cluster.getFileSystem(), cluster.getClient());
+        submitter.submitJobInternal(Job.this, cluster);
+    }
+}
 
-`Job`的`submit()`方法创建一个`JobSubmitter`实例并调用其`submitJobInternal()`方法。`JobSubmitter`的`submitJobInternal()`方法实现的作业提交过程为：
+class JobSubmitter {
+    FileSystem jtFs;
+    ClientProtocol submitClient;          // 客户端实例
+    /**
+      * 作业提交过程包含以下几个部分
+      * + 向资源管理器请求一个新应用ID并将其设置为MR作业的作业ID
+      * + 检查作业的输入输出目录
+      * + 计算作业的输入分片（Input Split），通过调用`InputFormat`的`getSplits()`方法实现
+      * + 如有需要，为作业使用DistributedCache设置必要的账号信息
+      * + 将作业所需要的资源（包括作业JAR文件、配置文件和计算得到的输入分片）复制到共享文件系统上一个以作业ID命名的目录下
+      * + 调用资源管理器的`submitJob()`方法提交作业
+      */
+    JobStatus submitJobInternal(Job job, Cluster cluster) {
+        // 检查输出目录
+        checkSpecs(job);
 
-1. 向资源管理器请求一个新应用ID并将其设置为MR作业的作业ID
-2. 检查作业的输入输出目录
-3. 计算作业的输入分片（Input Split），通过调用`InputFormat`的`getSplits()`方法实现
-4. 如有需要，为作业使用DistributedCache设置必要的账号信息
-5. 将作业所需要的资源（包括作业JAR文件、配置文件和计算得到的输入分片）复制到共享文件系统上一个以作业ID命名的目录下
-6. 调用资源管理器的`submitJob()`方法提交作业
+        Configuration conf = job.getConfiguration();
+        // 作业工作目录 ${mapreduce.jobtracker.staging.root.dir}/<user>/.staging
+        // 配置项mapreduce.jobtracker.staging.root.dir默认值为/tmp/hadoop/mapred/staging
+        Path jobStagingArea = JobSubmissionFiles.getStagingDir(cluster, conf);
 
-**文件上传** MapReduce作业文件的上传与下载是由DistributedCache工具完成，对于一个典型的MapReduce作业，可能包含以下资源^[支持HDFS文件，以`hdfs://...`格式指定文件路径即可]
-+ 程序jar包：MapReduce应用程序jar包
-+ 作业配置文件：描述MapReduce应用程序的配置信息（根据JobConf对象生成的xml文件）
-+ 依赖的第三方jar包：应用程序依赖的第三方jar包，提交作业时用参数`-libjars`指定
-+ 依赖的归档文件：应用程序中如果用到多个文件，可直接打包成归档文件，提交作业时用参数`-archives`指定
-+ 依赖的普通文件：应用程序中用到的普通文件，提交作业时用参数`-files`指定
+        // 向资源管理器请求一个新应用ID并将其设置为MapReduce作业ID
+        JobID jobId = submitClient.getNewJobID();
+        job.setJobID(jobId);
 
-作业文件上传到HDFS后，可能会有大量节点同时从HDFS上下载这些文件，进而产生文件访问热点现象，造成性能瓶颈，可以通过配置项`mapreduce.client.submit.file.replication`（默认为10）设置作业文件的副本数以通过分摊负载方式避免产生访问热点。
+        Path submitJobDir = new Path(jobStagingArea, jobId.toString());  // ${mapreduce.jobtracker.staging.root.dir}/<user>/.staging/<jobId>
 
+        // 检查作业工作目录是否存在并复制作业所需要的资源
+        /**
+          * 获取资源副本副本数
+          * short replication = (short) conf.getInt(Job.SUBMIT_REPLICATION, Job.DEFAULT_SUBMIT_REPLICATION);
+          * 通过命令行参数添加的资源
+          * Collection<String> files = conf.getStringCollection("tmpfiles");
+          * Collection<String> libjars = conf.getStringCollection("tmpjars");
+          * Collection<String> archives = conf.getStringCollection("tmparchives");
+          * String jobJar = job.getJar();
+          * 通过Job API添加的资源
+          * files.addAll(conf.getStringCollection(MRJobConfig.FILES_FOR_SHARED_CACHE));
+          * libjars.addAll(conf.getStringCollection(MRJobConfig.FILES_FOR_CLASSPATH_AND_SHARED_CACHE));
+          * archives.addAll(conf.getStringCollection(MRJobConfig.ARCHIVES_FOR_SHARED_CACHE));
+          * 复制作业所需资源
+          * uploadFiles(job, files, submitJobDir, mapredSysPerms, replication, fileSCUploadPolicies, statCache);
+          * uploadLibJars(job, libjars, submitJobDir, mapredSysPerms, replication, fileSCUploadPolicies, statCache);
+          * uploadArchives(job, archives, submitJobDir, mapredSysPerms, replication, archiveSCUploadPolicies, statCache);
+          * uploadJobJar(job, jobJar, submitJobDir, replication, statCache);
+          * addLog4jToDistributedCache(job, submitJobDir);
+          */
+        copyAndConfigureFiles(job, submitJobDir);
+        // 作业配置文件
+        Path submitJobFile = JobSubmissionFiles.getJobConfPath(submitJobDir);    // ${mapreduce.jobtracker.staging.root.dir}/<user>/.staging/<jobId>/job.xml
+        // 计算作业输入分片
+        /**
+          * InputFormat<?, ?> input = ReflectionUtils.newInstance(job.getInputFormatClass(), conf);
+          * List<InputSplit> splits = input.getSplits(job);
+          * T[] array = (T[]) splits.toArray(new InputSplit[splits.size()]);
+          * // 基于数据量对分片进行排序，优先处理数据量大的
+          * Arrays.sort(array, new SplitComparator());
+          * JobSplitWriter.createSplitFiles(jobSubmitDir, conf, jobSubmitDir.getFileSystem(conf), array);
+          *
+          * // createSplitFiles逻辑
+          * FSDataOutputStream out = createFile(fs, JobSubmissionFiles.getJobSplitFile(jobSubmitDir), conf);
+          * SplitMetaInfo[] info = writeNewSplits(conf, splits, out);
+          * out.close();
+          * writeJobSplitMetaInfo(fs,JobSubmissionFiles.getJobSplitMetaFile(jobSubmitDir), new FsPermission(JobSubmissionFiles.JOB_FILE_PERMISSION), splitVersion, info);
+          */
+        int maps = writeSplits(job, submitJobDir);
+        /** 保存作业配置文件job.xml
+          * FSDataOutputStream out = FileSystem.create(jtFs, jobFile, new FsPermission(JobSubmissionFiles.JOB_FILE_PERMISSION));
+          * conf.writeXml(out);
+          */
+        writeConf(conf, submitJobFile);
+        // 提交作业 最后调用资源管理器（LocalJobRunner、YARNRunner等）的submitJob()方法提交作业
+        JobStatus status = submitClient.submitJob(jobId, submitJobDir.toString(), job.getCredentials());
+        return status;
+    }
+}
+
+class YARNRunner implements ClientProtocol {
+
+    ResourceMgrDelegate resMgrDelegate;      // 资源管理器客户端句柄（YarnClient子类） new ResourceMgrDelegate(new YarnConfiguration(conf))
+    ClientCache clientCache;                 // Hadoop IPC RPC类中对请求的客户端缓存类 new ClientCache(conf, resMgrDelegate)
+
+    JobStatus submitJob(JobID jobId, String jobSubmitDir, Credentials ts) {
+        ApplicationSubmissionContext appContext = createApplicationSubmissionContext(conf, jobSubmitDir, ts);
+        ApplicationId applicationId = resMgrDelegate.submitApplication(appContext);     // 调用YarnClientImpl的submitApplication()方法
+        ApplicationReport appMaster = resMgrDelegate.getApplicationReport(applicationId);
+        return clientCache.getClient(jobId).getJobStatus(jobId);
+    }
+}
 ```
-${JobId}
-  - archives/               # 依赖的归档文件
-  - files/                  # 依赖的普通文件
-  - <appJar>                # 程序jar包
-  - job.split               # 原始InputSplit信息
-  - job.splitmetainfo       # InputSplit原数据信息
-  - job.xml                 # 作业配置文件
-  - libjars/                # 依赖的第三方jar包
+
+**文件上传** MapReduce作业文件的上传与下载是由DistributedCache工具完成，对于一个典型的MapReduce作业，可能包含以下资源^[支持HDFS文件，以`hdfs://...`格式指定文件路径即可]。另外，作业文件上传到HDFS后，可能会有大量节点同时从HDFS上下载这些文件，进而产生文件访问热点现象，造成性能瓶颈，可以通过配置项`mapreduce.client.submit.file.replication`（默认为10）设置作业文件的副本数以通过分摊负载方式避免产生访问热点。
+
+```bob-svg
+"${mapreduce.jobtracker.staging.root.dir}/<user>/.staging/<JobId>"
+ ├── "archives/"                            # 依赖的归档文件
+ ├── "files/"                                # 依赖的普通文件
+ ├── "<appJar>"                             # 程序jar包
+ ├── job.split                                 # InputSplit信息
+ ├── job.splitmetainfo                           # InputSplit元数据信息
+ ├── job.xml                                 # 作业配置文件
+ └── "libjars/"                                # 依赖的第三方jar包
 ```
 
-**计算输入分片** 调用`InputFormat#getSplits()`方法生成InputSplit元数据信息和原始InputSplit信息，InputSplit元数据信息用于生成Task本地性相关的数据结构，原始InputSplit信息则被Map Task初始化时使用，用以获取自己要处理的数据。InputSplit相关操作放在包`org.apache.hadoop.mapreduce.split`中，主要包含三个类：
+**计算输入分片** 调用`InputFormat#getSplits()`方法生成InputSplit元数据信息和原始InputSplit信息，InputSplit元数据信息用于生成Task本地性相关的数据结构，原始InputSplit信息则被Map Task初始化时使用，用以获取自己要处理的数据。InputFormat类主要用于数据分割（Data splits，定义了单个Map任务处理数据量及其可能的执行服务器信息）和记录读取（Record reader，从输入文件读取数据并将它们以键值对的形式提交给Mapper）。
 
-+ `JobSplit`：封装了读写InputSplit相关的基础类
-    + `SplitMetaInfo`：描述一个InputSplit的元数据信息，包括startOffset、inputDataLength、locations三项内容。startOffset存储InputSplit元信息在job.split文件中的偏移量，inputDataLength存储InputSplit的数据长度，locations存储InputSplit所在的host列表
-    + `TaskSplitMetaInfo`：用于保存InputSplit元信息的数据结构，包括splitIndex、inputDataLength、locations三项内容
-    + `TaskSplitIndex`：用于指定新任务待处理数据位置信息在文件job.split中的索引，主要包含splitLocation、startOffset两项内容，splitLocation存储job.split文件的目录，startOffset存储InputSplit信息在job.split文件中的位置
-+ `JobSplitWriter`：
-+ `SplitMetaInfoReader`：
+```Java
+abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
+    List<InputSplit> getSplits(JobContext job) {
+        // 分片大小最小值，取文件格式分片最小值（默认是1）和作业设置的分片最小值（配置项mapreduce.input.fileinputformat.split.minsize设置，默认是1）中较大值
+        long minSize = Math.max(getFormatMinSplitSize(), getMinSplitSize(job));
+        // 分片大小最大值，配置项mapreduce.input.fileinputformat.split.maxsize设置，默认是Long.MAX_VALUE
+        long maxSize = getMaxSplitSize(job);
+
+        // 生成分片
+
+        List<InputSplit> splits = new ArrayList<InputSplit>();
+        // 获取输入文件，配置项mapreduce.input.fileinputformat.inputdir设置，配置项mapreduce.input.fileinputformat.input.dir.recursive设置是否递归遍历子目录
+        List<FileStatus> files = listStatus(job);
+
+        boolean ignoreDirs = !getInputDirRecursive(job) && job.getConfiguration().getBoolean(INPUT_DIR_NONRECURSIVE_IGNORE_SUBDIRS, false);
+        for (FileStatus file: files) {
+            if (ignoreDirs && file.isDirectory()) {
+                continue;
+            }
+            Path path = file.getPath();
+            long length = file.getLen();
+            if (length != 0) {
+                // 获取文件各个块的位置
+                BlockLocation[] blkLocations;
+                if (file instanceof LocatedFileStatus) {
+                    blkLocations = ((LocatedFileStatus) file).getBlockLocations();
+                } else {
+                    FileSystem fs = path.getFileSystem(job.getConfiguration());
+                    blkLocations = fs.getFileBlockLocations(file, 0, length);
+                }
+
+                if (isSplitable(job, path)) {
+                    // 对于可切分文件，按照分片大小（Math.max(minSize, Math.min(maxSize, blockSize))）分割文件
+                    // makeSplit(path, start, length, hosts, inMemoryHosts)中创建并返回FileSplit（InputSplit子类）
+                    long blockSize = file.getBlockSize();
+                    long splitSize = computeSplitSize(blockSize, minSize, maxSize);
+
+                    long bytesRemaining = length;
+                    while (((double) bytesRemaining)/splitSize > SPLIT_SLOP) {  // 超过分片大小1.1倍时才分片处理，直到文件小于分片大小1.1倍
+                        int blkIndex = getBlockIndex(blkLocations, length-bytesRemaining);
+                        splits.add(makeSplit(path, length-bytesRemaining, splitSize, blkLocations[blkIndex].getHosts(), blkLocations[blkIndex].getCachedHosts())); bytesRemaining -= splitSize;
+                    }
+                    // 余下部分单独作为一个分片
+                    if (bytesRemaining != 0) {
+                        int blkIndex = getBlockIndex(blkLocations, length-bytesRemaining);
+                        splits.add(makeSplit(path, length-bytesRemaining, bytesRemaining, blkLocations[blkIndex].getHosts(), blkLocations[blkIndex].getCachedHosts()));
+                    }
+                 } else {
+                    // 对于不可切分文件，将整个文件作为一个分片
+                    splits.add(makeSplit(path, 0, length, blkLocations[0].getHosts(), blkLocations[0].getCachedHosts()));
+                }
+            } else { 
+                // 对空文件创建空hosts
+                splits.add(makeSplit(path, 0, length, new String[0]));
+            }
+        }
+
+        job.getConfiguration().setLong(NUM_INPUT_FILES, files.size());
+        return splits;
+    }
+}
+```
 
 #### 作业初始化
 
-作业初始化的主要工作是根据输入数据量和作业配置参数将作业分解成若干个Map Task以及Reduce Task，并添加到相关数据结构中，以等待后续被调度执行。
+```Java
+class YarnClientImpl extends YarnClient {
+
+    ApplicationId submitApplication(ApplicationSubmissionContext appContext) {
+        ApplicationId applicationId = appContext.getApplicationId();
+        SubmitApplicationRequest request = (SubmitApplicationRequest)Records.newRecord(SubmitApplicationRequest.class);
+        request.setApplicationSubmissionContext(appContext);
+
+        this.rmClient.submitApplication(request);
+        int pollCount = 0;
+        EnumSet<YarnApplicationState> waitingStates = EnumSet.of(YarnApplicationState.NEW, YarnApplicationState.NEW_SAVING, YarnApplicationState.SUBMITTED);
+        EnumSet failToSubmitStates = EnumSet.of(YarnApplicationState.FAILED, YarnApplicationState.KILLED);
+
+        while(true) {
+            while(true) {
+                    try {
+                        ApplicationReport appReport = this.getApplicationReport(applicationId);
+                        YarnApplicationState state = appReport.getYarnApplicationState();
+                        if (!waitingStates.contains(state)) {
+                            if (failToSubmitStates.contains(state)) {
+                                throw new YarnException("Failed to submit " + applicationId + " to YARN : " + appReport.getDiagnostics());
+                            }
+
+                            LOG.info("Submitted application " + applicationId);
+                            return applicationId;
+                        }
+
+                        long elapsedMillis = System.currentTimeMillis() - startTime;
+                        if (this.enforceAsyncAPITimeout() && elapsedMillis >= this.asyncApiPollTimeoutMillis) {
+                            throw new YarnException("Timed out while waiting for application " + applicationId + " to be submitted successfully");
+                        }
+
+                        ++pollCount;
+                        if (pollCount % 10 == 0) {
+                            LOG.info("Application submission is not finished, submitted application " + applicationId + " is still in " + state);
+                        }
+
+                        try {
+                            Thread.sleep(this.submitPollIntervalMillis);
+                        } catch (InterruptedException var15) {
+                            String msg = "Interrupted while waiting for application " + applicationId + " to be successfully submitted.";
+                            LOG.error(msg);
+                            throw new YarnException(msg, var15);
+                        }
+                    } catch (ApplicationNotFoundException var16) {
+                        LOG.info("Re-submit application " + applicationId + "with the same ApplicationSubmissionContext");
+                        this.rmClient.submitApplication(request);
+                    }
+                }
+            }
+        }
+    }
+}
+```
 
 资源管理器收到调用它的`submitJob()`消息后，便将请求传递给YARN调度器（YARN scheduler）。调度器分配一个容器，然后资源管理器在节点管理器的管理下在容器中启动Application Master进程。
 
