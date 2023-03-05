@@ -246,7 +246,7 @@ a:focus {
 
 .global-wrapper {
   margin: var(--spacing-0) auto;
-  margin-right: 430px;
+  margin-right: max(305px, 25%);
   max-width: var(--maxWidth-wrapper);
   padding: var(--spacing-10) var(--spacing-5);
 }
@@ -358,15 +358,18 @@ a:focus {
 .table-of-contents {
   background-color: #ffffff;
   position: fixed;
+  padding-left: 5px;
+  padding-right: 15px;
   top: 0;
   right: 0;
   bottom: 0;
-  width: 400px;
+  width: 300px;
   overflow: auto;
   border-left-style: solid;
   border-left-color: #000000;
   border-width: 1px;
   z-index: 999;
+  font-size: var(--fontSize-0);
 }
 
 .table-of-contents a {
@@ -376,10 +379,10 @@ a:focus {
 
 .table-of-contents a:hover {
   color: var(--color-primary);
-  font-size: var(--fontSize-2);
+  font-size: var(--fontSize-1);
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 900px) {
   .table-of-contents {
     display: none;
   }

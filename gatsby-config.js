@@ -76,7 +76,7 @@ module.exports = {
           {
             resolve: `gatsby-remark-plantuml-lite`,
             options: {
-              imageType: `svg`
+              imageType: `svg`,
             }
           },
           {

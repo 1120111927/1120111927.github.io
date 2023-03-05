@@ -14,11 +14,9 @@ MapReduce是一种编程模型，用于处理和生成大型数据集，设计�
 
 MapReduce程序将一个键值对集合作为输入，并生成一个键值对集合作为输出。map函数接收输入，并生成一个中间键值对集合；MapReduce框架会将所有共用一个键的值组合在一起，并将它们传递给reduce函数；reduce函数接收一个中间键以及该键的值的集合作为输入（中间值通过一个迭代器^[这样可以处理因为数据量太大而无法存放在内存中的存储值的列表（list）]来传递给用户所编写的Reduce函数），它会将这些值合并在一起，以此来生成一组更小的值的集合。通常每次调用reduce函数所产生的值的结果只有0个或者1个。
 
-## Hadoop MapReduce
+**Hadoop MapReduce** MRv1主要由编程模型（MapReduce API）、资源管理与作业控制模块（由JobTracker和TaskTracker组成）和数据处理引擎（由MakTask和ReduceTask组成）三部分组成，存在单点故障、扩展性差等问题。MapReduce On YARN（即MRv2）在编程模型和数据处理引擎方面的实现是一样的，资源管理模块由YARN实现，作业控制模块实现为YARN上的一个ApplicationMaster组件，即MRAppMaster，负责管理MapReduce作业的生命周期，包括作业管理、资源申请与再分配、Container启动与释放、作业恢复等。
 
-MRv1主要由编程模型（MapReduce API）、资源管理与作业控制模块（由JobTracker和TaskTracker组成）和数据处理引擎（由MakTask和ReduceTask组成）三部分组成，存在单点故障、扩展性差等问题。MapReduce On YARN（即MRv2）在编程模型和数据处理引擎方面的实现是一样的，资源管理模块由YARN实现，作业控制模块实现为YARN上的一个ApplicationMaster组件，即MRAppMaster，负责管理MapReduce作业的生命周期，包括作业管理、资源申请与再分配、Container启动与释放、作业恢复等。
-
-### MapReduce作业运行过程
+## MapReduce作业运行过程
 
 MapReduce作业运行入口为`Job#Submit()`或`Job#waitForCompletion`（提交之前没有提交过的作业并等待它完成，内部调用`submit()`）。
 
@@ -113,7 +111,137 @@ MR作业运行过程涉及以下5个组件：
     2. `YarnChild`获取任务运行需要的资源（包括作业的配置、JAR文件和所有来自分布式缓存的文件）
     3. `YarnChild`运行map任务或reduce任务
 
-#### 作业提交
+### 作业提交
+
+```plantuml
+@startuml
+skinparam ArrowThickness 1
+scale max 800 width
+
+participant Actor
+participant Job
+participant JobSubmitter
+participant YARNRunner
+participant ResourceMgrDelegate
+participant YarnClientImpl
+participant ApplicationClientProtocolPBClientImpl
+
+Actor -> Job: submit()
+activate Job
+
+Job -> Job: connect()
+activate Job
+deactivate Job
+
+Job -> Job: getJobSubmitter()
+activate Job
+
+Job -> JobSubmitter: <<create>>
+activate JobSubmitter
+
+JobSubmitter --> Job
+deactivate JobSubmitter
+
+deactivate Job
+
+Job -> JobSubmitter: submitInternal()
+activate JobSubmitter
+
+JobSubmitter -> JobSubmitter: checkSpecs()
+activate JobSubmitter
+deactivate JobSubmitter
+
+JobSubmitter -> YARNRunner: getNewJobID()
+activate YARNRunner
+
+YARNRunner -> ResourceMgrDelegate: getNewJobID()
+activate ResourceMgrDelegate
+
+ResourceMgrDelegate -> YarnClientImpl: createApplication()
+activate YarnClientImpl
+
+YarnClientImpl -> ApplicationClientProtocolPBClientImpl: getNewApplication()
+activate ApplicationClientProtocolPBClientImpl
+
+ApplicationClientProtocolPBClientImpl --> YarnClientImpl
+deactivate ApplicationClientProtocolPBClientImpl
+
+YarnClientImpl -> YarnClientImpl: getApplicationSubmissionContext()
+activate YarnClientImpl
+deactivate YarnClientImpl
+
+YarnClientImpl --> ResourceMgrDelegate
+deactivate YarnClientImpl
+
+ResourceMgrDelegate --> YARNRunner
+deactivate ResourceMgrDelegate
+
+YARNRunner --> JobSubmitter
+deactivate YARNRunner
+
+JobSubmitter -> JobSubmitter: copyAndConfigureFiles()
+activate JobSubmitter
+deactivate JobSubmitter
+
+JobSubmitter -> JobSubmitter: writeSplits()
+activate JobSubmitter
+deactivate JobSubmitter
+
+JobSubmitter -> JobSubmitter: writeConf()
+activate JobSubmitter
+deactivate JobSubmitter
+
+JobSubmitter -> YARNRunner: submitJob()
+activate YARNRunner
+
+YARNRunner -> YARNRunner: createApplicationSubmissionContext()
+activate YARNRunner
+deactivate YARNRunner
+
+YARNRunner -> ResourceMgrDelegate: submitApplication()
+activate ResourceMgrDelegate
+
+ResourceMgrDelegate -> YarnClientImpl: submitApplication()
+activate YarnClientImpl
+
+YarnClientImpl ->  ApplicationClientProtocolPBClientImpl: submitApplication()
+activate ApplicationClientProtocolPBClientImpl
+
+ApplicationClientProtocolPBClientImpl --> YarnClientImpl
+deactivate ApplicationClientProtocolPBClientImpl
+
+YarnClientImpl --> ResourceMgrDelegate
+deactivate YarnClientImpl
+
+ResourceMgrDelegate --> YARNRunner
+deactivate ResourceMgrDelegate
+
+YARNRunner -> ResourceMgrDelegate: getApplicationReport()
+activate ResourceMgrDelegate
+
+ResourceMgrDelegate -> YarnClientImpl: getApplicationReport()
+activate YarnClientImpl
+
+YarnClientImpl -> ApplicationClientProtocolPBClientImpl: getApplicationReport()
+activate ApplicationClientProtocolPBClientImpl
+
+ApplicationClientProtocolPBClientImpl --> YarnClientImpl
+deactivate ApplicationClientProtocolPBClientImpl
+
+YarnClientImpl --> ResourceMgrDelegate
+deactivate YarnClientImpl
+
+ResourceMgrDelegate --> YARNRunner
+deactivate ResourceMgrDelegate
+
+YARNRunner --> JobSubmitter
+deactivate YARNRunner
+
+JobSubmitter --> Job
+deactivate JobSubmitter
+
+@enduml
+```
 
 ```Java
 class Job extends JobContextImpl implements JobContext {
@@ -157,7 +285,7 @@ class Job extends JobContextImpl implements JobContext {
 
 class JobSubmitter {
     FileSystem jtFs;
-    ClientProtocol submitClient;          // 客户端实例
+    ClientProtocol submitClient;          // 客户端实例YARNRunner
     /**
       * 作业提交过程包含以下几个部分
       * + 向资源管理器请求一个新应用ID并将其设置为MR作业的作业ID
@@ -176,7 +304,14 @@ class JobSubmitter {
         // 配置项mapreduce.jobtracker.staging.root.dir默认值为/tmp/hadoop/mapred/staging
         Path jobStagingArea = JobSubmissionFiles.getStagingDir(cluster, conf);
 
-        // 向资源管理器请求一个新应用ID并将其设置为MapReduce作业ID
+        /** 向资源管理器请求一个新应用ID并将其设置为MapReduce作业ID
+          * 实际调用resMgrDelegate（ResourceMgrDelegate实例）的getNewJobID()方法
+          * jobId getNewJobID() {
+          *     application = client.createApplication().getApplicationSubmissionContext();       // client为YarnClient实例
+          *     applicationId = application.getApplicationId();
+          *     return TypeConverter.fromYarn(applicationId);
+          * }
+          */
         JobID jobId = submitClient.getNewJobID();
         job.setJobID(jobId);
 
@@ -242,6 +377,85 @@ class YARNRunner implements ClientProtocol {
         ApplicationId applicationId = resMgrDelegate.submitApplication(appContext);     // 调用YarnClientImpl的submitApplication()方法
         ApplicationReport appMaster = resMgrDelegate.getApplicationReport(applicationId);
         return clientCache.getClient(jobId).getJobStatus(jobId);
+    }
+}
+
+class YarnClientImpl extends YarnClient {
+
+    ApplicationClientProtocol rmClient;         // rmClient = ClientRMProxy.createRMProxy(getConfig(), ApplicationClientProtocol.class); 具体为ApplicationClientProtocolPBClientImpl
+
+    YarnClientApplication createApplication() {
+        ApplicationSubmissionContext context = Records.newRecord (ApplicationSubmissionContext.class);
+        GetNewApplicationResponse newApp = getNewApplication();
+        ApplicationId appId = newApp.getApplicationId();
+        context.setApplicationId(appId);
+        return new YarnClientApplication(newApp, context);
+    }
+
+    GetNewApplicationResponse getNewApplication() {
+        GetNewApplicationRequest request = Records.newRecord(GetNewApplicationRequest.class);
+        return rmClient.getNewApplication(request);
+    }
+
+    ApplicationId submitApplication(ApplicationSubmissionContext appContext) {
+
+        ApplicationId applicationId = appContext.getApplicationId();
+
+        SubmitApplicationRequest request = (SubmitApplicationRequest)Records.newRecord(SubmitApplicationRequest.class);
+        request.setApplicationSubmissionContext(appContext);
+
+        /**
+          * 
+          */
+        rmClient.submitApplication(request);     // 提交作业
+
+        EnumSet<YarnApplicationState> waitingStates = EnumSet.of(YarnApplicationState.NEW, YarnApplicationState.NEW_SAVING, YarnApplicationState.SUBMITTED);
+        EnumSet failToSubmitStates = EnumSet.of(YarnApplicationState.FAILED, YarnApplicationState.KILLED);
+
+        // 由于提交作业是异步的，提交后需要获取作业提交状态，所以不断的循环构建ApplicationReporter对象来获取ApplicationState，直到提交状态为失败或者成功才退出循环，否则会再次提交
+        while(true) {
+            /** 获取来自ResourceManager节点的应用状态报告
+              * ApplicationReport getApplicationReport(ApplicationId appId) {
+              *     GetApplicationReportRequest request = (GetApplicationReportRequest)Records.newRecord(GetApplicationReportRequest.class);
+              *     request.setApplicationId(appId);
+              *     GetApplicationReportResponse response = rmClient.getApplicationReport(request);
+              *     return response.getApplicationReport();
+              * }
+              */
+            ApplicationReport appReport = getApplicationReport(applicationId);
+            YarnApplicationState state = appReport.getYarnApplicationState();    // 获取作业当前状态
+            if (failToSubmitStates.contains(state)) {
+                rmClient.submitApplication(request);
+            } else if (!waitingStates.contains(state)) {
+                break;         // 作业进入运行阶段，结束循环
+            }
+        }
+    }
+    return applicationId;
+}
+
+class ApplicationClientProtocolPBClientImpl implements ApplicationClientProtocol {
+    ApplicationClientProtocolPB proxy;
+
+    public ApplicationClientProtocolPBClientImpl(long clientVersion, InetSocketAddress addr, Configuration conf) {
+        RPC.setProtocolEngine(conf, ApplicationClientProtocolPB.class, ProtobufRpcEngine.class);
+        proxy = RPC.getProxy(ApplicationClientProtocolPB.class, clientVersion, addr, conf);
+    }
+
+    public GetApplicationReportResponse getApplicationReport( GetApplicationReportRequest request) {
+        GetApplicationReportRequestProto requestProto = ((GetApplicationReportRequestPBImpl) request).getProto();
+        return new GetApplicationReportResponsePBImpl(proxy.getApplicationReport( null, requestProto));
+    }
+
+    public GetNewApplicationResponse getNewApplication(GetNewApplicationRequest request) {
+        GetNewApplicationRequestProto requestProto = ((GetNewApplicationRequestPBImpl) request).getProto();
+        return new GetNewApplicationResponsePBImpl(proxy.getNewApplication(null,
+        requestProto));
+    }
+
+    public SubmitApplicationResponse submitApplication( SubmitApplicationRequest request) {
+        SubmitApplicationRequestProto requestProto = ((SubmitApplicationRequestPBImpl) request).getProto();
+        return new SubmitApplicationResponsePBImpl(proxy.submitApplication(null, requestProto));
     }
 }
 ```
@@ -324,61 +538,9 @@ abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
 }
 ```
 
-#### 作业初始化
+### 作业初始化
 
 ```Java
-class YarnClientImpl extends YarnClient {
-
-    ApplicationId submitApplication(ApplicationSubmissionContext appContext) {
-        ApplicationId applicationId = appContext.getApplicationId();
-        SubmitApplicationRequest request = (SubmitApplicationRequest)Records.newRecord(SubmitApplicationRequest.class);
-        request.setApplicationSubmissionContext(appContext);
-
-        this.rmClient.submitApplication(request);
-        int pollCount = 0;
-        EnumSet<YarnApplicationState> waitingStates = EnumSet.of(YarnApplicationState.NEW, YarnApplicationState.NEW_SAVING, YarnApplicationState.SUBMITTED);
-        EnumSet failToSubmitStates = EnumSet.of(YarnApplicationState.FAILED, YarnApplicationState.KILLED);
-
-        while(true) {
-            while(true) {
-                    try {
-                        ApplicationReport appReport = this.getApplicationReport(applicationId);
-                        YarnApplicationState state = appReport.getYarnApplicationState();
-                        if (!waitingStates.contains(state)) {
-                            if (failToSubmitStates.contains(state)) {
-                                throw new YarnException("Failed to submit " + applicationId + " to YARN : " + appReport.getDiagnostics());
-                            }
-
-                            LOG.info("Submitted application " + applicationId);
-                            return applicationId;
-                        }
-
-                        long elapsedMillis = System.currentTimeMillis() - startTime;
-                        if (this.enforceAsyncAPITimeout() && elapsedMillis >= this.asyncApiPollTimeoutMillis) {
-                            throw new YarnException("Timed out while waiting for application " + applicationId + " to be submitted successfully");
-                        }
-
-                        ++pollCount;
-                        if (pollCount % 10 == 0) {
-                            LOG.info("Application submission is not finished, submitted application " + applicationId + " is still in " + state);
-                        }
-
-                        try {
-                            Thread.sleep(this.submitPollIntervalMillis);
-                        } catch (InterruptedException var15) {
-                            String msg = "Interrupted while waiting for application " + applicationId + " to be successfully submitted.";
-                            LOG.error(msg);
-                            throw new YarnException(msg, var15);
-                        }
-                    } catch (ApplicationNotFoundException var16) {
-                        LOG.info("Re-submit application " + applicationId + "with the same ApplicationSubmissionContext");
-                        this.rmClient.submitApplication(request);
-                    }
-                }
-            }
-        }
-    }
-}
 ```
 
 资源管理器收到调用它的`submitJob()`消息后，便将请求传递给YARN调度器（YARN scheduler）。调度器分配一个容器，然后资源管理器在节点管理器的管理下在容器中启动Application Master进程。
@@ -392,7 +554,7 @@ MR作业的Application Master是一个Java应用程序，其主类（MainClass�
 
 MR Application Master决定如何运行MR作业的各个任务。与在同一个节点顺序运行这些任务相比，如果在新的容器中分配和运行这些任务的开销大于并行运行它们的收益，MR Application Master将会在同一个JVM中运行这些任务。这被称为uberized，或作为uber任务执行。map任务数少于属性`mapreduce.job.ubertask.maxmaps`指定值（默认为10），reduce任务数少于属性`mapreduce.job.ubertask.maxreduces`指定值（默认为1），并且输入大小小于属性`mapreduce.job.ubertask.maxbytes`指定值（默认为HDFS块大小）的作业在启用uber任务时将以这种方式运行，属性`mapreduce.job.ubertask.enable`用于设置是否启用uber任务，为true时表示启用，可以针对单个作业或整个集群设置。
 
-#### 任务分配
+### 任务分配
 
 如果作业不适合作为uber任务运行，MR Application Master将会为该作业的所有map任务和reduce任务向资源管理器申请容器。
 
@@ -400,13 +562,13 @@ MR Application Master决定如何运行MR作业的各个任务。与在同一个
 
 请求也为任务指定了内存需求和CPU数目。默认每个map任务和reduce任务都分配1024M内存和一个虚拟内核。通过`mapreduce.map.memory.mb`、`mapreduce.reduce.memory.mb`、`mapreduce.map.cpu.vcores`和`mapreduce.reduce.cpu.vcores`四个属性对每个作业进行设置。
 
-#### 任务执行
+### 任务执行
 
 资源管理器的调度器为任务分配一个容器后，MR Application Master通过与容器所在节点的节点管理器通信来启动容器。任务由主类为`YarnChild`的一个Java应用程序执行。在它运行任务之前首先将任务需要的资源本地化（包括作业的配置、JAR文件和所有来自分布式缓存的文件）。最后，运行map任务或reduce任务。`YarnChile`在指定的JVM中运行，用户定义的map或reduce函数（甚至YarnChild）中的任何异常都不会影响到节点管理器。
 
 每个任务都能够执行设置（setup）和提交（commit）动作，它们和任务本身在同一个JVM中运行，并由作业的`OutputCommitter`确定。对于基于文件的作业，提交动作将任务输出由临时位置搬移到最终位置。提交协议确保当推测执行被启用时，只有一个任务副本被提交，其他的都被取消。
 
-#### 进度和状态更新
+### 进度和状态更新
 
 作业和它的每个任务都拥有状态数据，包括作业或任务的执行状态（running、successfully completed、failed）、map和reduce进度、作业计数器（counter）的值、状态信息（或描述）。当任务运行时，它将跟踪自己的进度（对于map任务为已处理的输入数据比例，对于reduce任务分为copy phase、sort phase、reduce phase三个阶段，各占1/3，各阶段内再按照已处理输入数据比例度量）。map或reduce任务运行时，通过umbilical接口向其application master报告进度和状态（包括计数器），application master进而汇总作业的状态数据。
 
@@ -414,11 +576,11 @@ Resource Manager Web UI显示所有运行应用及其对应Application Master We
 
 作业执行期间，客户端每秒^[配置项mapreduce.client.progressmonitor.pollinterval指定]从Application Master获取最新状态，客户端也可以使用`Job#getStatus()`方法获取JobStatus实例（包含了作业的所有状态数据）。
 
-#### 作业完成
+### 作业完成
 
 当Application Master收到作业最后一个任务完成的通知时，它将作业的状态置为成功。当Job拉取状态时将得知已成功完成，接着向用户打印信息并从`waitForCompletion()`方法中返回，作业的统计数据和计数器此时将输出到控制台。也可以通过在客户端设置`mapreduce.job.end-notification.url`让Application Master发送HTTP作业通知。作业完成后，Application Master和任务container清理工作状态（如删除中间结果），并调用`OutputCommitter#commitJob()`方法。Job History Server打包作业信息以供后续查看。
 
-### 容错
+## 容错
 
 **Task Failure** 当Application Master被通知一个任务尝试失败时，它将重新调度执行对应任务。配置项`mapreduce.map.maxattempts`设置map任务最大尝试次数，配置项`mapreduce.reduce.maxattempts`设置reduce任务最大尝试次数，超过最大尝试次数（默认为4）时，整个作业将失败^[被杀的任务尝试不计入任务失败次数]。任务失败存在以下情形
 + 当map/reduce任务中的用户代码抛出运行时异常时，任务将在JVM退出前向其Application Master报告错误信息，错误最后将输出到用户日志中。Application Master标记任务尝试（task attempt）为失败，并且释放容器（Container）^[对于Hadoop Streaming任务，Streaming进程退出码非0时将被标记为失败，由配置项`stream.non.zero.exit.is.failure`设置，默认为true]
@@ -433,13 +595,13 @@ Resource Manager Web UI显示所有运行应用及其对应Application Master We
 
 **Resource Manager Failure** 资源管理器失败是单点故障，所有运行中的作业都将失败并无法恢复。为了实现高可用性，需要以主备配置方式运行一对资源管理器，一旦主资源管理器失败，备用资源管理器立即接管。所有运行中应用的信息都存储在高可用状态存储中（ZooKeeper或HDFS），所以备用资源管理器可以恢复失败的主资源管理器的核心状态。节点管理器信息并未保存在状态存储中，但是当节点管理器向新资源管理器发送心跳时，新的资源管理器可以立即重新构建其信息。当新的资源管理器启动时，它将从状态存储中读取应用信息，然后重启所有集群上运行应用的Application Master。客户端和Node Manager必须被设置成处理资源管理器失败，它们将以轮询方式尝试连接每个资源管理器直到发现活跃的一个。如果活跃的失败了，它们将重试直到备用的变活跃
 
-### Shuffle
+## Shuffle
 
 Shuffle是指系统执行排序、将map输出作为输入传给reducer的过程。MapReduce通过Shuffle确保每个reducer的输入都是按键排序的。
 
 ![Shuffle过程](images/shuffle过程.jpg)
 
-#### Map端
+### Map端
 
 系统利用缓冲的方式将map函数的输出写到内存并进行预排序，最后成为磁盘上一个的分区且有序的文件。涉及到的操作主要有溢出（spill）、分区（partiiton）、排序（sort）、combiner、合并（merge）、压缩。
 
@@ -455,7 +617,7 @@ Shuffle是指系统执行排序、将map输出作为输入传给reducer的过程
 
 输出文件的分区通过HTTP传给reducer，属性`mapreduce.shuffle.max.threads`设置用于负责传输文件分区的工作线程的最大数目，该属性针对每个节点管理器（node manager），而不是针对每个map任务。默认值为0，表示机器上处理器数目的两倍。
 
-#### Reduce端
+### Reduce端
 
 reduce任务分为三个阶段：复制（copy）、排序（sort）和reduce。
 
@@ -473,7 +635,7 @@ map输出小于阈值（属性`mapreduce.reduce.shuffle.input.buffer.percent`设
 
 ** reduce阶段（reduce phase）** 对已排序输出中的每个键调用reduce函数，reduce函数的输出直接写到输出文件系统（对于HDFS，由于节点管理器（node manager）也运行着数据节点（datanode），第一个块副本将被写到本地磁盘）。
 
-### Task执行
+## Task执行
 
 **作业信息** Hadoop向Map/Reduce任务提供其运行环境的信息（如正在处理的文件名），可以通过Mapper或Reducer方法的context参数获取这些信息^[对于Hadoop Streaming程序，Hadooop将运行环境信息设置为环境变量（替换其中的非数字字母字符为下划线），也可以通过向Streaming加载程序提供`-cmdenv`选项设置环境变量]。
 
@@ -505,9 +667,9 @@ map输出小于阈值（属性`mapreduce.reduce.shuffle.input.buffer.percent`设
 
 **任务副作用文件（Task side-effect files）** map或reduce任务一般通过OutputCollector以键值对形式输出结果，也可以直接在HDFS等分布式文件系统中直接写入输出文件。任务可以通过作业配置的`mapreduce.task.output.dir`属性获取工作目录，对于MapReduce Java程序，也可以通过FileOutputFormat的静态方法`getWorkOutputPath()`获取表示工作目录的Path对象。OutputCommitter协议保证同个任务的多个实例不会写入同个文件，任务成功时其在工作目录中创建的副作用文件将会自动移动到输出目录，否则其副作用文件将被删除。
 
-### 类型和格式
+## 类型和格式
 
-### 具体实现
+## 具体实现
 
 ```bob-svg
                                                             .------.
@@ -565,7 +727,7 @@ YARN使用了基于事件驱动的异步编程模型，通过事件将各个组�
 | ContainerLauncher.EventType | ContainerLauncher |
 | org.apache.hadoop.mapreduce.jobhistory.EventType | JobHistoryEventHandler |
 
-#### MapReduce客户端
+### MapReduce客户端
 
 MapReduce客户端是MapReduce用户与YARN（和MRAppMaster）进行通信的唯一途径，通过该客户端，用户可以向YARN提交作业，获取作业的运行状态和控制作业。MapReduce客户端涉及两个RPC通信协议：
 
@@ -595,7 +757,7 @@ MapReduce客户端是MapReduce用户与YARN（和MRAppMaster）进行通信的�
 
 在YARN中，应用程序的运行过程包括两个步骤：启动ApplicationMaster和运行应用程序内部的各类任务，ApplicationMaster是由ResourceManager直接与NodeManager通信而启动的，在它启动起来之前，客户端只能与ResourceManager交互以查询作业相关信息。一旦作业的ApplicationMaster成功启动，客户端可直接与它交互以查询作业信息和控制作业
 
-#### MRAppMaster
+### MRAppMaster
 
 按照作业大小，MRAppMaster提供了三种作业运行模式：
 + 本地模式：通常用于作业调试
@@ -817,7 +979,7 @@ TaskAttempt事件：
 16. TA_CLEANUP_DONE：清理任务实例完成空间。当任务实例运行失败或者被杀死时，通过调用函数`OutputCommitter#abortTask()`清理它占用的磁盘空间和产生结果
 17. TA_TOO_MANY_FETCH_FAILURE：Reduce Task远程复制Map Task输出结果失败。当Reduce Task远程复制一个已经运行完成的Map Task输出数据时，可能因为磁盘或者网络等原因，导致数据损坏或者数据丢失，此时会触发一个TA_TOO_MANY_FETCH_FAILURE事件，从而触发MRAppMaster重新调度执行该Map Task
 
-##### 资源申请与再分配
+#### 资源申请与再分配
 
 ContainerAllocator是MRAppMaster中负责申请和分配的模块。用户提交的作业被分解成Map Task和Reduce Task后，这些Task所需的资源统一由ContainerAllocator模块负责从ResourceManager中申请，而一旦ContainerAllocator得到资源后，需采用一定的策略进一步分配给作业的各个任务。在YARN中，作业的资源需求可描述为五元组`<priority, hostname, capability, containers, relax_locality>`，分别表示作业优先级、期望资源所在的host、资源量、Container数目、是否松弛本地性。ContainerAllocator周期性通过心跳与ResourceManager通信，以获取已分配的Container列表、完成的Container列表、最近更新的节点列表等信息，而ContainerAllocator根据这些信息完成相应的操作。
 
