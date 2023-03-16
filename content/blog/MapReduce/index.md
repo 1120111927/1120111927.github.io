@@ -116,7 +116,6 @@ MR作业运行过程涉及以下5个组件：
 ```plantuml
 @startuml
 skinparam ArrowThickness 1
-scale max 800 width
 
 participant Actor
 participant Job
@@ -541,9 +540,99 @@ abstract class FileInputFormat<K, V> extends InputFormat<K, V> {
 ### 作业初始化
 
 ```Java
+// 资源管理器收到调用它的`submitJob()`消息后，便将请求传递给YARN调度器（YARN scheduler）
+class ApplicationClientProtocolPBServiceImpl implements ApplicationClientProtocolPB {
+
+    ApplicationClientProtocol real;       // ClientRMService实例
+
+    public ApplicationClientProtocolPBServiceImpl(ApplicationClientProtocol impl) {
+        this.real = impl;
+    }
+
+    public GetNewApplicationResponseProto getNewApplication(RpcController arg0, GetNewApplicationRequestProto proto) {
+        GetNewApplicationRequestPBImpl request = new GetNewApplicationRequestPBImpl(proto);
+        GetNewApplicationResponse response = real.getNewApplication(request);
+        return ((GetNewApplicationResponsePBImpl)response).getProto();
+    }
+
+    SubmitApplicationResponseProto submitApplication(RpcController arg0, SubmitApplicationRequestProto proto) {
+        SubmitApplicationRequestPBImpl request = new SubmitApplicationRequestPBImpl(proto);
+        SubmitApplicationResponse response = real.submitApplication(request);
+        return ((SubmitApplicationResponsePBImpl)response).getProto();
+    }
+}
+
+class ClientRMService extends AbstractService implements ApplicationClientProtocol {
+
+    RecordFactory recordFactory = RecordFactoryProvider.getRecordFactory(null);
+    YarnScheduler scheduler;
+
+    ApplicationId getNewApplicationId() {
+        ApplicationId applicationId = org.apache.hadoop.yarn.server.utils.BuilderUtils.newApplicationId(recordFactory, ResourceManager.getClusterTimeStamp(), applicationCounter.incrementAndGet());
+        return applicationId;
+    }
+
+    GetNewApplicationResponse getNewApplication(GetNewApplicationRequest request) {
+        GetNewApplicationResponse response = recordFactory.newRecordInstance(GetNewApplicationResponse.class);
+        response.setApplicationId(getNewApplicationId());
+        response.setMaximumResourceCapability(scheduler.getMaximumResourceCapability());
+        return response;
+    }
+
+    public SubmitApplicationResponse submitApplication(SubmitApplicationRequest request) {
+        ApplicationSubmissionContext submissionContext = request.getApplicationSubmissionContext();
+        ApplicationId applicationId = submissionContext.getApplicationId();
+
+        String user = UserGroupInformation.getCurrentUser().getShortUserName();
+
+        // 作业已经存在时直接返回实例
+        if (rmContext.getRMApps().get(applicationId) != null) {
+          return SubmitApplicationResponse.newInstance();
+        }
+
+        // 如果没有设置队列则使用默认队列
+        if (submissionContext.getQueue() == null) {
+            submissionContext.setQueue(YarnConfiguration.DEFAULT_QUEUE_NAME);
+        }
+        // 如果没有设置作业名称则使用默认名称
+        if (submissionContext.getApplicationName() == null) {
+            submissionContext.setApplicationName(YarnConfiguration.DEFAULT_APPLICATION_NAME);
+        }
+        // 如果没有设置提交类型则默认使用yarn
+        if (submissionContext.getApplicationType() == null) {
+            submissionContext.setApplicationType(YarnConfiguration.DEFAULT_APPLICATION_TYPE);
+        } else {
+            if (submissionContext.getApplicationType().length() > YarnConfiguration.APPLICATION_TYPE_LENGTH) {
+                submissionContext.setApplicationType(submissionContext .getApplicationType().substring(0, YarnConfiguration.APPLICATION_TYPE_LENGTH));
+            }
+        }
+
+        // 向RMAppManager提交作业
+        rmAppManager.submitApplication(submissionContext, System.currentTimeMillis(), user);
+
+        return recordFactory.newRecordInstance(SubmitApplicationResponse.class);
+    }
+}
+
+class RMAppManager implements EventHandler<RMAppManagerEvent> {
+
+    RMContext rmContext;
+
+    void submitApplication(ApplicationSubmissionContext submissionContext, long submitTime, String user) {
+
+        ApplicationId applicationId = submissionContext.getApplicationId();
+
+        RMAppImpl application = createAndPopulateNewRMApp(submissionContext, submitTime, user, false, -1, null);
+        if (UserGroupInformation.isSecurityEnabled()) {
+            this.rmContext.getDelegationTokenRenewer().addApplicationAsync(applicationId, BuilderUtils.parseCredentials(submissionContext), submissionContext.getCancelTokensWhenComplete(), application.getUser(), BuilderUtils.parseTokensConf(submissionContext));
+        } else {
+            this.rmContext.getDispatcher().getEventHandler().handle(new RMAppEvent(applicationId, RMAppEventType.START));
+        }
+    }
+}
 ```
 
-资源管理器收到调用它的`submitJob()`消息后，便将请求传递给YARN调度器（YARN scheduler）。调度器分配一个容器，然后资源管理器在节点管理器的管理下在容器中启动Application Master进程。
+调度器分配一个容器，然后资源管理器在节点管理器的管理下在容器中启动Application Master进程。
 
 MR作业的Application Master是一个Java应用程序，其主类（MainClass）是`MRAppMaster`。MR作业初始化步骤如下：
 

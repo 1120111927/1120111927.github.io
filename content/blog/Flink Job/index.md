@@ -1,35 +1,28 @@
 ---
-title: Flink原理之作业提交、调度、执行
+title: Flink作业提交、调度、执行
 date: "2022-12-24"
 description: Flink作业核心执行流程为DataStream API -> Transformation -> StreamGraph -> JobGraph -> ExecutionGraph -> 物理执行图
 tags: Flink作业提交、Flink作业调度、Flink作业执行、算子融合
 ---
 
-Flink作业执行前需要提交Flink集群，Flink集群可以与不同的资源框架（Yarn、K8s、Mesos等）进行集成，可以按照不同的模式（Session模式和PerJob模式）运行。在Flink作业提交过程中，现在资源框架上启动Flink集群，然后提交作业，在Flink客户端中进行StreamGraph、JobGraph的转换，提交JobGraph到Flink集群，然后JobMaster将JobGraph转换为ExecutionGraph，之后进入调度执行阶段。
+```toc
+ordered: true
+class-name: "table-of-contents"
+```
 
-作业提交给JobManager生成ExecutionGraph之后，就进入了作业调度执行的阶段。在作业调度阶段中，调度器根据调度模式选择对应的调度策略，申请所需要的资源，将作业发布到TaskManager上，启动作业执行，作业开始消费数据，执行业务逻辑。在作业的整个执行过程中，设计计算任务的提交、分发、管理和故障恢复（Failover）等。
+Flink作业执行前需要提交Flink集群，Flink集群可以与不同的资源框架（Yarn、K8s、Mesos等）进行集成，可以按照不同的模式（Session模式、PerJob模式）运行。在Flink作业提交过程中，先在资源框架上启动Flink集群，接着提交作业，在Flink客户端中进行StreamGraph、JobGraph的转换，提交JobGraph到Flink集群，然后JobMaster将JobGraph转换为ExecutionGraph，之后进入调度执行阶段。在作业调度阶段，调度器根据调度模式选择对应的调度策略，申请所需要的资源，将作业发布到TaskManager上，启动作业执行。JobMaster调度作业的Task到TaskManager，所有的Task启动成功进入执行状态，则整个作业进入执行状态。作业开始消费数据（从外部数据源读取数据），执行业务逻辑，数据在Task DAG中流转，处理完毕后，写出到外部存储。在作业的整个执行过程中，涉及计算任务的提交、分发、管理和故障恢复（Failover）等。Flink作业真正执行起来之后，会在物理上构成Task相互连接的DAG，在执行过程中上游Task结果写入ResultPartition，ResultPartition又分成ResultSubPartition，下游的Task通过InputGate与上游建立数据传输通道，InputGate中的InputChannel对应于ResultSubPartition，将数据交给Task执行。Task执行的时候，根据数据的不同类型（StreamRecord、Watermark、LatencyMarker）进行不同的处理逻辑，处理完后再交给下游的Task。
 
-Flink JobMaster调度作业的Task到TaskManager，所有的Task启动成功，进入执行状态，则整个作业进入执行状态。从外部数据源开始读取数据，数据在Flink Task DAG中流转，处理完毕后，写出到外部存储。
-
-Flink作业真正执行起来之后，会在物理上构成Task相互连接的DAG，在执行过程中上游Task结果写入ResultPartition，ResultPartition又分成ResultSubPartition，下游的Task通过InputGate与上游建立数据传输通道，InputGate中的InputChannel对应于ResultSubPartition，将数据交给Task执行。Task执行的时候，根据数据的不同类型（StreamRecord、Watermark、LatencyMarker）进行不同的处理逻辑，处理完后再交给下游的Task。
-
-流计算应用经过DataStream API -> Transformation -> StreamGraph->JobGraph->ExecutionGraph转换过程后，经过Flink的调度执行，在Flink集群中启动计算任务，形成一个物理执行图。
-
-由Flink Client在提交时触发Flink应用的main方法，用户使用DateStream API编写的业务逻辑组装成Transformation流水线，调用`StreamExecutionEnvironment#execute()`方法时触发StreamGraph的构建。
+Flink客户端在提交Flink应用时触发其main方法，用户使用DateStream API编写的业务逻辑组装成Transformation流水线，调用StreamExecutionEnvironment的execute()方法时触发StreamGraph的构建。概括来说，流计算应用经过DataStream API -> Transformation -> StreamGraph -> JobGraph -> ExecutionGraph转换过程后，经过Flink的调度执行，在Flink集群中启动计算任务，形成一个物理执行图。
 
 ## 图（Graph）
 
-图有节点，节点之间有边相连，节点用来表示数据的处理逻辑，边用来表示数据处理的流转，从数据源读取数据开始，上游的数据处理完毕之后，交给下游继续处理，直到数据输出到外部存储中，整个过程用图来表示。
+图有节点，节点之间有边相连。节点用来表示数据的处理逻辑，边用来表示数据处理的流转。从数据源读取数据开始，上游的数据处理完毕之后，交给下游继续处理，直到数据输出到外部存储中，整个过程用图来表示。
 
 ### 流图（StreamGraph）
 
-StreamGraph与具体的执行无关，核心是表达计算过程的逻辑，由StreamNode和StreamEdge构成。
+StreamGraph与具体的执行无关，核心是表达计算过程的逻辑，由StreamNode和StreamEdge构成。StreamNode是StreamGraph中的节点，从Transformation转换而来，表示一个算子，可以有多个输入/输出，分为实体StreamNode和虚拟StreamNode，实体StreamNode会最终变成物理算子，虚拟StreamNode会附着在StreamEdge上。StreamEdge是StreamGraph中的边，用来连接两个StreamNode，包含了旁路输出、分区器、字段筛选输出等信息。
 
-StreamNode是StreamGraph中的节点，从Transformation转换而来，表示一个算子，可以有多个输入/输出，分为实体StreamNode和虚拟StreamNode，实体StreamNode会最终变成物理算子，虚拟StreamNode会附着在StreamEdge上。
-
-StreamEdge是StreamGraph中的边，用来连接两个StreamNode，包含了旁路输出、分区器、字段筛选输出等信息。
-
-StreamGraph在Flink Client中生成，入口为`StreamExecutionEnvironment#getStreamGraph()`，实际在StreamGraphGenerator中生成，从SinkTransformation向前追溯到SourceTransformation，在遍历过程中一边遍历一边构建StreamGraph，在遍历Transformation的过程中，会对不同类型的Transformation分别进行转换。对于物理Transformation则转换为StreamNode实体，对于虚拟Transformation则作为虚拟StreamNode。针对具体某一种具体类型的Transformation，会调用其相应的`transformXxx()`方法进行转换，`transformXxx()`首先对上游Transformation进行递归转换，确保上游都已经完成了转换，然后通过`addOperator()`方法构造出StreamNode，通过`addEdge()`方法与上游进行连接，构造出StreamEdge。在构造StreamNode的过程中，运行时所需要的关键信息，即执行算子的容器类（StreamTask及其子类）和实例化算子的工厂（StreamOperatorFactory）也会确定下来，封装到StreamNode中。添加StreamEdge过程中，如果ShuffleNode为null，则使用ShuffleMode.PIPELINED模式，在构建StreeamEdge时，转换Transformation过程中生成的虚拟StreamNode会将虚拟StreamNode的信息附着在StreamEdge上。
+StreamGraph在Flink客户端生成，入口为StreamExecutionEnvironment的`getStreamGraph()`方法，实际在StreamGraphGenerator中生成。从SinkTransformation向前追溯到SourceTransformation，在遍历过程中一边遍历一边构建StreamGraph，在遍历Transformation的过程中，会对不同类型的Transformation分别进行转换。对于物理Transformation则转换为StreamNode实体，对于虚拟Transformation则作为虚拟StreamNode。针对具体某一种具体类型的Transformation，会调用其相应的`transformXxx()`方法进行转换。`transformXxx()`首先对上游Transformation进行递归转换，确保上游都已经完成了转换，然后通过`addOperator()`方法构造出StreamNode。通过`addEdge()`方法与上游进行连接，构造出StreamEdge。在构造StreamNode的过程中，运行时所需要的关键信息，如执行算子的容器类（StreamTask及其子类）和实例化算子的工厂（StreamOperatorFactory）也会确定下来，封装到StreamNode中。添加StreamEdge过程中，如果ShuffleNode为null，则使用ShuffleMode.PIPELINED模式，在构建StreeamEdge时，转换Transformation过程中生成的虚拟StreamNode会将虚拟StreamNode的信息附着在StreamEdge上。
 
 ```Java
 // StreamGraphGenerator.java中负责具体的StreamGraph生成
@@ -66,116 +59,110 @@ private void transform(Transformation transformation) {
 5. 设置并行度、最大并行度
 6. 构造StreamEdge的边，关联上下游StreamNode
 
-```Java
-// 以OneInputTransformation示例
-private <IN, OUT> Collection<Integer> transformOneInputTransform(OneInputTransformation<IN, OUT> transform) {
-    Collection<Integer> inputIds = transform(transform.getInput());
-
-    // 防止重复转换，如果已经转换过了则直接返回转换结果
-    if (alreadyTransformed.containsKey(transform)) {
-        return alreadyTransformed.get(transform);
-    }
-    // 确定Slot组
-    String slotSharingGroup = determineSlotSharingGroup(transform.getSlotSharingGroup(), inputIds);
-    // 添加StreamNode到StreamGraph中
-    streamGraph.addOperator(
-        transform.getId(),
-        slotSharingGroup,
-        transform.getCoLocationGroupKey(),
-        transform.getOperatorFactory(),
-        transform.getInputType(),
-        transform.getOutputType(),
-        transform.getName());
-    if (transform.getStateKeySelector() != null) {
-        TypeSerializer<?> keySerializer = transform.getStateKeyType().createSerializer(env.getConfig());
-        streamGraph.setOneInputStateKey(transform.getId(), transform.getStateKeySelector(), keySerializer);
-    }
-
-    // 设定并行度
-    streamGraph.setParallelism(transform.getId(), transform.getParallelism());
-    streamGraph.setMaxParallelism(transform.getId(), transform.getMaxParallelism());
-    // 添加StreamEdge，建立StreamNode之间的关联关系
-    for (Integer inputId : inputIds) {
-        streamGraph.addEdge(inputId, transform.getId(), 0);
-    }
-
-    return Collections.singleton(transform.getId());
-}
-```
-
-**虚拟Transformation转换过程** 不会转换为StreamNode，而是通过`streamGraph#addVirtualPartitionNode()`方法添加虚拟节点，当下游Transformation调用`StreamGraph#addEdge()`方法添加StreamEdge时，会把相关信息封装进StreamEdge中
-
-```Java
-// 以PartitionTransformation为例
-private <T> Collection<Integer> transformPartition(PartitionTransfromation<T> partition) {
-    Transformation<T> input = partition.getInput();
-    List<Integer> resultIds = new ArrayList<>();
-    // 递归对该transformation的直接上游进行转换
-    Collection<Integer> transformedIds = transform(input);
-    for (Integer transformedId : transformedIds) {
-        int virtualId = Transformation.getNewNodeId();
-        // 添加一个虚拟分区节点，不会生成StreamNode
-        streamGraph.addVirtualPartitionNode(transformedId, virtualId, partition.getPartitioner());
-        resultIds.add(virtualId);
-    }
-    return resultIds;
-}
-
-private void addEdgeInternal(Integer upStreamVertexID, Integer downStreamVertexID, int typeNumber, StreamPartitioner<?> partitioner, List<String> outputNames, OutputTag outputTag) {
-    // 当上游时sideOutput时，递归调用，并传入sideOutput信息
-    if（virtualSideOutputNodes.containsKey(upStreamVertexID)) {
-        int virtualId = upStreamVertexID;
-        upStreamVertexID = virtualSideOutputNodes.get(virtualId).f0;
-        if (outputTag == null) {
-            outputTag = virtualSideOutputNodes.get(virtualId).f1;
+    ```Java
+    // 以OneInputTransformation示例
+    <IN, OUT> Collection<Integer> transformOneInputTransform(OneInputTransformation<IN, OUT> transform) {
+        Collection<Integer> inputIds = transform(transform.getInput());
+    
+        // 防止重复转换，如果已经转换过了则直接返回转换结果
+        if (alreadyTransformed.containsKey(transform)) {
+            return alreadyTransformed.get(transform);
         }
-        addEdgeInternal(upStreamVertexID, downStreamVertexID, typeNumber, partitioner, null, outputTag);
-    }
-    // 当上游是select时，递归调用，并传入select信息
-    else if (virtualSelectNodes.containsKey(upStreamVertexID)) {
-        int virtualId = upStreamVertexID;
-        upStreamVertexID = virtualSelectNodes.get(virtualId).f0;
-        if (outputNames.isEmpty()) {
-            outputNames = virtualSelectNodes.get(virtualId).f1;
+        // 确定Slot组
+        String slotSharingGroup = determineSlotSharingGroup(transform.getSlotSharingGroup(), inputIds);
+        // 添加StreamNode到StreamGraph中
+        streamGraph.addOperator(
+            transform.getId(),
+            slotSharingGroup,
+            transform.getCoLocationGroupKey(),
+            transform.getOperatorFactory(),
+            transform.getInputType(),
+            transform.getOutputType(),
+            transform.getName());
+        if (transform.getStateKeySelector() != null) {
+            TypeSerializer<?> keySerializer = transform.getStateKeyType().createSerializer(env.getConfig());
+            streamGraph.setOneInputStateKey(transform.getId(), transform.getStateKeySelector(), keySerializer);
         }
-        addEdgeInternal(upStreamVertexID, downStreamVertexID, typeNumber, partitioner, outputNames, outputTag);
-    }
-    // 当上游是partition时，递归调用，并传入partitioner信息
-    else if (virtualPartitionNodes.containsKey(upStreamVertexID)) {
-        int virtualId = upStreamVertexID;
-        upStreamVertexID = virtualPartitionNodes.get(virtualId).f0;
-        if (partitioner == null) {
-            partitioner = virtualPartitionNodes.get(virtualId).f1;
+    
+        // 设定并行度
+        streamGraph.setParallelism(transform.getId(), transform.getParallelism());
+        streamGraph.setMaxParallelism(transform.getId(), transform.getMaxParallelism());
+        // 添加StreamEdge，建立StreamNode之间的关联关系
+        for (Integer inputId : inputIds) {
+            streamGraph.addEdge(inputId, transform.getId(), 0);
         }
-        addEdgeInternal(upStreamVertexID, downStreamVertexID, typeNumber, pertitioner, outputNames, outputTag);
+    
+        return Collections.singleton(transform.getId());
     }
-    // 不是以上逻辑转换的情况，真正构建StreamEdge
-    else {
-        StreamNode upStramNode = getStreamNode(upStreamVertexID);
-        StreamNode downStreamNode = getStreamNode(downStreamVertexID);
-        // 没有指定partitioner时，会为其选择forward或者rebalance分区
-        if (partitioner == null && upStreamNode.getParallelism() == downStreamNode.getParallelism()) {
-            partitioner = new ForwardPartitioner<Object>();
-        } else if (partitioner == null) {
-            partitioner = new RebalancePartitioner<Object>();
+    ```
+
+**虚拟Transformation转换过程** 不会转换为StreamNode，而是通过streamGraph的`addVirtualPartitionNode()`方法添加虚拟节点，当下游Transformation调用StreamGraph的`addEdge()`方法添加StreamEdge时，会把相关信息封装进StreamEdge中
+
+    ```Java
+    // 以PartitionTransformation为例
+    private <T> Collection<Integer> transformPartition(PartitionTransfromation<T> partition) {
+        Transformation<T> input = partition.getInput();
+        List<Integer> resultIds = new ArrayList<>();
+        // 递归对该transformation的直接上游进行转换
+        Collection<Integer> transformedIds = transform(input);
+        for (Integer transformedId : transformedIds) {
+            int virtualId = Transformation.getNewNodeId();
+            // 添加一个虚拟分区节点，不会生成StreamNode
+            streamGraph.addVirtualPartitionNode(transformedId, virtualId, partition.getPartitioner());
+            resultIds.add(virtualId);
         }
-        // 创建StreamEdge，并将该StreamEdge添加到上游的输出，下游的输入
-        StreamEdge edge = new StreamEdge(upStreamNode, downStreamNode, typeNumber, outputNames, partitioner, outputTag);
-        getStreamNode(edge.getSourceId()).addOutEdge(edge);
-        getStreamNode(edge.getTargerId()).addInEdge(edge);
+        return resultIds;
     }
-}
-```
+    
+    private void addEdgeInternal(Integer upStreamVertexID, Integer downStreamVertexID, int typeNumber, StreamPartitioner<?> partitioner, List<String> outputNames, OutputTag outputTag) {
+        // 当上游时sideOutput时，递归调用，并传入sideOutput信息
+        if（virtualSideOutputNodes.containsKey(upStreamVertexID)) {
+            int virtualId = upStreamVertexID;
+            upStreamVertexID = virtualSideOutputNodes.get(virtualId).f0;
+            if (outputTag == null) {
+                outputTag = virtualSideOutputNodes.get(virtualId).f1;
+            }
+            addEdgeInternal(upStreamVertexID, downStreamVertexID, typeNumber, partitioner, null, outputTag);
+        }
+        // 当上游是select时，递归调用，并传入select信息
+        else if (virtualSelectNodes.containsKey(upStreamVertexID)) {
+            int virtualId = upStreamVertexID;
+            upStreamVertexID = virtualSelectNodes.get(virtualId).f0;
+            if (outputNames.isEmpty()) {
+                outputNames = virtualSelectNodes.get(virtualId).f1;
+            }
+            addEdgeInternal(upStreamVertexID, downStreamVertexID, typeNumber, partitioner, outputNames, outputTag);
+        }
+        // 当上游是partition时，递归调用，并传入partitioner信息
+        else if (virtualPartitionNodes.containsKey(upStreamVertexID)) {
+            int virtualId = upStreamVertexID;
+            upStreamVertexID = virtualPartitionNodes.get(virtualId).f0;
+            if (partitioner == null) {
+                partitioner = virtualPartitionNodes.get(virtualId).f1;
+            }
+            addEdgeInternal(upStreamVertexID, downStreamVertexID, typeNumber, pertitioner, outputNames, outputTag);
+        }
+        // 不是以上逻辑转换的情况，真正构建StreamEdge
+        else {
+            StreamNode upStramNode = getStreamNode(upStreamVertexID);
+            StreamNode downStreamNode = getStreamNode(downStreamVertexID);
+            // 没有指定partitioner时，会为其选择forward或者rebalance分区
+            if (partitioner == null && upStreamNode.getParallelism() == downStreamNode.getParallelism()) {
+                partitioner = new ForwardPartitioner<Object>();
+            } else if (partitioner == null) {
+                partitioner = new RebalancePartitioner<Object>();
+            }
+            // 创建StreamEdge，并将该StreamEdge添加到上游的输出，下游的输入
+            StreamEdge edge = new StreamEdge(upStreamNode, downStreamNode, typeNumber, outputNames, partitioner, outputTag);
+            getStreamNode(edge.getSourceId()).addOutEdge(edge);
+            getStreamNode(edge.getTargerId()).addInEdge(edge);
+        }
+    }
+    ```
 
 ### 作业图（JobGraph）
 
-JobGraph在StreamGraph的基础上进行了一些优化（如通过OperatorChain机制将算子合并起来，在执行时调度在同一个Task线程上，避免数据的跨线程、跨网络的传递），由JobVertex、JobEdge和IntermediateDataSet组成。
-
-JobVertex是JobGraph中的节点，包含一个或多个算子，输入是JobEdge，输出是IntermediateDataSet。
-
-JobEdge是JobGraph中的边，表示一个数据流转通道，连接了上游生产的中间数据集IntermediateDataSet和下游消费者JobVertex。JobEdge中的数据分发模式会直接影响执行时Task之间的数据连接关系，是点对点连接还是全连接。
-
-IntermediateDataSet是一种逻辑结构，用来表示JobVertex的输出。IntermediateDataSet的个数与该JobVertex对应的StreamNode的出边数量相同，可以是一个或多个。
+JobGraph在StreamGraph的基础上进行了一些优化（如通过OperatorChain机制将算子合并起来，在执行时调度在同一个Task线程上，避免数据的跨线程、跨网络的传递），由JobVertex、JobEdge和IntermediateDataSet组成。 JobVertex是JobGraph中的节点，包含一个或多个算子，输入是JobEdge，输出是IntermediateDataSet。JobEdge是JobGraph中的边，表示一个数据流转通道，连接了上游生产的中间数据集IntermediateDataSet和下游消费者JobVertex。JobEdge中的数据分发模式会直接影响执行时Task之间的数据连接关系，是点对点连接还是全连接。 IntermediateDataSet是一种逻辑结构，用来表示JobVertex的输出。IntermediateDataSet的个数与该JobVertex对应的StreamNode的出边数量相同，可以是一个或多个。
 
 JobGraph的生成入口在StreamGraph中，StreamingJobGraphGenerator负责流计算JobGraph的生成，在转换前需要进行一系列的预处理，之后开始构建JobGraph中的点和边，从Source开始，向下递归遍历StreamGraph，执行具体的Chain和JobVertex生成、JobEdge关联、IntermediateDataSet，逐步创建JobGraph，在创建的过程中同时完成算子融合（OperatorChain）优化。构建JobVertex时需要将StreamNode中的重要配置信息复制到JobVertex中，之后 ，构建JobEdge将JobVertex连接起来（内部算子之间无须构建JobEdge进行连接）。构建JobEdge时很重要一点是确定上游JobVertex和下游JobVertex的数据交换方式，根据ShuffleMode来确定ResultPartition的类型（在执行算子写出数据和数据交换中使用），ShuffleMode确定了ResultPartition，也就确定了上游JobVertex输出的IntermediateDataSet类型，也就知道该JobEdge的输入IntermediateDataSet了。ForwardPartitioner和RescalePartitioner两种Partitioner转换为DistributionPattern.POINTWISE的分发模式，其它类型的Partitioner统一转换为DistributionPattern.ALL_TO_ALL模式。
 
@@ -275,9 +262,7 @@ private List<StreamEdge> createChain(Integer startNodeId, Integer currentNodeId,
 
 ```
 
-#### 算子融合
-
-为了更高效地实现分布式执行，Flink会尽可能地将多个算子融合在一起，形成一个OperatorChain，一个OperatorChain在同一个Task线程内执行。OperatorChain内的算子之间，在同一个线程内通过方法调用地方式传递数据，能减少线程之间地切换，减少消息的序列化/反序列化，无需借助内存缓冲区，也无需通过网络在算子间传递数据，可在减少延迟的同时提供整体的吞吐量。形成OperatorCahin必须具备以下9个条件：
+**算子融合** 为了更高效地实现分布式执行，Flink会尽可能地将多个算子融合在一起，形成一个OperatorChain，一个OperatorChain在同一个Task线程内执行。OperatorChain内的算子之间，在同一个线程内通过方法调用地方式传递数据，能减少线程之间地切换，减少消息的序列化/反序列化，无需借助内存缓冲区，也无需通过网络在算子间传递数据，可在减少延迟的同时提供整体的吞吐量。形成OperatorCahin必须具备以下9个条件：
 1. 下游节点的入边为1
 2. StreamEdge的下游节点对应的算子不为null
 3. StreamEdge的上游节点对应的算子不为null
@@ -464,13 +449,13 @@ public enum ExecutionMode {
 + TaskEventDispatcher（任务事件分发器）：从消费者任务分发事件给生产者任务
 
 ```bob-svg
-                              ,------------------,
+                              .------------------.
                               | TaskManager      |
-                              | ,--------------, |
-,-----------, TCP Connection  | | Task         | | TCP Connection  ,-------------,
-|TaskManager|<--------------->| | ,------------+ +<--------------->| TaskManager |
+                              | .--------------. |
+.-----------. TCP Connection  | | Task         | | TCP Connection  .-------------.
+|TaskManager|<--------------->| | .------------+ +<--------------->| TaskManager |
 '-----------'                 | | | StreamTask | |                 '-------------'
-                              | | | ,----------+ |
+                              | | | .----------+ |
                               | | | | Operator | |
                               | '-+-+----------' |
                               '------------------'
@@ -536,13 +521,10 @@ TaskManaer负责Task的生命周期管理，并将状态的变化通知到JobMas
 
 Flink作业被提交之后，JobManager中会为每个作业启动一个JobMaster，并将剩余的工作交给JobMaster，JobMaster负责整个作业生命周期中资源申请、调度、容错等细节。在作业启动过程中，JobMaster会与ResourceManager、TaskManager频繁交互，经过一系列复杂的过程之后，作业才真正在Flink集群中运行起来，进入执行阶段，开始读取、处理、写出数据的过程。
 
-#### JobMaster启动作业
-
-作业启动涉及JobMaster和TaskManager两个位于不同进程的组件，在JobMaster中完成作业图的转换，为作业申请资源、分配Slot，将作业的Task交给TaskManager，TaskManager初始化和启动Task。通过JobMaster管理作业的取消、检查点保存等，Task执行过程中持续地向JobMaster汇报自身的状态，以便监控和异常时重启作业或者Task。
-
-作业调度的入口在JobMaster中，由JobMaster发起调度，根据调度器，启动不同调度器的调度，批流调度选择在DefaultScheduler中，通过多态的方式交给调度策略执行具体的调度。
+**JobMaster启动作业** 作业启动涉及JobMaster和TaskManager两个位于不同进程的组件，在JobMaster中完成作业图的转换，为作业申请资源、分配Slot，将作业的Task交给TaskManager，TaskManager初始化和启动Task。通过JobMaster管理作业的取消、检查点保存等，Task执行过程中持续地向JobMaster汇报自身的状态，以便监控和异常时重启作业或者Task。
 
 ```Java
+// 作业调度的入口在JobMaster中，由JobMaster发起调度，根据调度器，启动不同调度器的调度，批流调度选择在DefaultScheduler中，通过多态的方式交给调度策略执行具体的调度。
 // JobMaster启动调度
 // JobMaster.java
 private void startScheduling() {
@@ -561,9 +543,7 @@ protected void startSchedulingInternal() {
 }
 ```
 
-#### 流作业启动调度
-
-流计算调度策略计算所有需要调度的ExecutionVertex，然后把需要调度的ExecutionVertex交给`DefaultScheduler#allocateSlotsAndDeploy()`，最终调用`Execution#deploy()`开始部署作业，当作业的所有Task启动之后，则作业启动成功。流作业的调度策略中，申请该作业所需要的Slot来部署Task，在申请之前将为所有的Task构建部署信息。DefaultScheduler中根据调度策略，选择不同的调度方法。流计算作业中，需要一次性部署所有Task，所以会对所有的Execution异步获取Slot，申请到所有需要的Slot之后，经过一系列的过程，最终调用`Execution#deploy()`进行实际的部署，实际上就是将Task部署相关的信息通过TaskManagerGateway交给TaskManager。在将Task发往TaskManager的过程中，需要将部署Task需要的信息进行包装，通过TaskManagerGateway部署Task到TaskManager。至此，将Task发送到TaskManager进程，TaskManager中接收Task部署信息，接下来开始启动Task执行，并向JobMaster汇报状态变换。
+**流作业调度** 流计算调度策略计算所有需要调度的ExecutionVertex，然后把需要调度的ExecutionVertex交给DefaultScheduler的`allocateSlotsAndDeploy()`，最终调用Execution的`deploy()`开始部署作业，当作业的所有Task启动之后，则作业启动成功。流作业的调度策略中，申请该作业所需要的Slot来部署Task，在申请之前将为所有的Task构建部署信息。DefaultScheduler中根据调度策略，选择不同的调度方法。流计算作业中，需要一次性部署所有Task，所以会对所有的Execution异步获取Slot，申请到所有需要的Slot之后，经过一系列的过程，最终调用Execution的`deploy()`进行实际的部署，实际上就是将Task部署相关的信息通过TaskManagerGateway交给TaskManager。在将Task发往TaskManager的过程中，需要将部署Task需要的信息进行包装，通过TaskManagerGateway部署Task到TaskManager。至此，将Task发送到TaskManager进程，TaskManager中接收Task部署信息，接下来开始启动Task执行，并向JobMaster汇报状态变换。
 
 ```Java
 // 流作业申请Slot部署Task
@@ -629,9 +609,7 @@ public void deploy() throws JobException {
 }
 ```
 
-#### 批作业调度
-
-批处理的本质是分阶段调度，上一个阶段执行完毕，且ResultPartition准备完毕之后，通知JobManager，JobManager调度下游消费ResultPartition的Execution（即Task）启动执行。InputDependencyConstraintChecker用来决定哪些下游Task具备执行条件，可以开始消费，然后调用DefaultScheduler进行资源申请，进入部署阶段。对于本阶段需要调度的Task，异步申请资源，申请资源完毕，最终调用`Execution#deploy()`进行实际的部署。批处理作业是分阶段、分批执行的，所以JobMaster需要知道何时能够启动下游的Task执行，在InputDependencyConstraint中调度时有两种限制规则：ANY规则和ALL规则。对于ANY规则，Task的所有上游输入有任意一个可以消费即可调度执行；对于ALL规则，Task的所有上游输入全部准备完毕后才可以进行调度执行。当接收到结果分区可消费的消息时，会再次触发调度执行的行为，遍历作业所有ExecutionVertex，选择符合调度条件的进行调度。对于PIPELINED类型的结果分组，当中间结果分区开始接收第一个Buffer数据时，触发调度下游消费Task的部署与执行。批处理作业从JobMaster向TaskManager的部署过程也是通过TaskManagerGateway接口进行。
+**批作业调度** 批处理的本质是分阶段调度，上一个阶段执行完毕，且ResultPartition准备完毕之后，通知JobManager，JobManager调度下游消费ResultPartition的Execution（即Task）启动执行。InputDependencyConstraintChecker用来决定哪些下游Task具备执行条件，可以开始消费，然后调用DefaultScheduler进行资源申请，进入部署阶段。对于本阶段需要调度的Task，异步申请资源，申请资源完毕，最终调用Execution的`deploy()`进行实际的部署。批处理作业是分阶段、分批执行的，所以JobMaster需要知道何时能够启动下游的Task执行，在InputDependencyConstraint中调度时有两种限制规则：ANY规则和ALL规则。对于ANY规则，Task的所有上游输入有任意一个可以消费即可调度执行；对于ALL规则，Task的所有上游输入全部准备完毕后才可以进行调度执行。当接收到结果分区可消费的消息时，会再次触发调度执行的行为，遍历作业所有ExecutionVertex，选择符合调度条件的进行调度。对于PIPELINED类型的结果分组，当中间结果分区开始接收第一个Buffer数据时，触发调度下游消费Task的部署与执行。批处理作业从JobMaster向TaskManager的部署过程也是通过TaskManagerGateway接口进行。
 
 ```Java
 // 申请Slot部署Task
@@ -678,13 +656,11 @@ public void onPartitionConsumable(ExecutionVertexID executionVertexId, ResultPar
 }
 ```
 
-#### TaskManager启动Task
+**TaskManager启动Task** StreamTask是算子的执行容器，在JobGraph中将算子连接在一起进行了优化，在执行层面上对应的是OperatorChain。JobMaster通过TaskManagerGateway的`submit()`RPC接口将Task发送到TaskManager上，TaskManager接收到Task的部署消息后，分为两个阶段执行：Task部署和启动Task，从部署信息中获取Task执行所需要的信息，初始化Task，然后触发Task的执行。在部署和执行的过程中，TaskExecutor和JobMaster保持交互，将Task的状态汇报给JobMaster，并接受JobMaster的Task管理操作。
 
-JobMaster通过`TaskManagerGateway#submit()`RPC接口将Task发送到TaskManager上，TaskManager接收到Task的部署消息后，分为两个阶段执行：Task部署和启动Task，从部署信息中获取Task执行所需要的信息，初始化Task，然后触发Task的执行。在部署和执行的过程中，TaskExecutor和JobMaster保持交互，将Task的状态汇报给JobMaster，并接受JobMaster的Task管理操作。
+ 1. Task部署：TaskManager的实现类是TaskExecutor，JobMaster将Task的部署信息封装为TaskDeploymentDescriptor对象，通过SubmitTask消息发送给TaskExecutor。处理该消息的入口方法是submitTask方法，该方法的核心逻辑是初始化Task，在初始化Task的过程中，需要为Task生成核心组件，准备好Task的可执行文件。这些核心组件的准备工作，目的都是实例化Task。Task在实例化过程中，还进行了重要的准备工作。在ExecutionGraph中每一个Execution对应一个Task，ExecutionEdge代表Task之间的数据交换关系，所以在Task的初始化中，需要ExecutionEdge的数据关系落实到运行层面上。在这个过程中，最重要的是建立上下游之间的交换通道，以及Task如何从上游读取，计算结果如何输出给下游。读取上游数据只用InputGate，结果写出使用ResultPartitionWriter。ResultPartitionWriter和InputGate的创建、销毁等管理由ShuffleEnvironment来负责。ShuffleEnvironment底层数据存储对应的是Buffer，一个TaskManager只有一个ShuffleEnvironment，所有的Task共享
 
-**Task部署** TaskManager的实现类是TaskExecutor，JobMaster将Task的部署信息封装为TaskDeploymentDescriptor对象，通过SubmitTask消息发送给TaskExecutor。处理该消息的入口方法是submitTask方法，该方法的核心逻辑是初始化Task，在初始化Task的过程中，需要为Task生成核心组件，准备好Task的可执行文件。这些核心组件的准备工作，目的都是实例化Task。Task在实例化过程中，还进行了重要的准备工作。在ExecutionGraph中每一个Execution对应一个Task，ExecutionEdge代表Task之间的数据交换关系，所以在Task的初始化中，需要ExecutionEdge的数据关系落实到运行层面上。在这个过程中，最重要的是建立上下游之间的交换通道，以及Task如何从上游读取，计算结果如何输出给下游。读取上游数据只用InputGate，结果写出使用ResultPartitionWriter。ResultPartitionWriter和InputGate的创建、销毁等管理由ShuffleEnvironment来负责。ShuffleEnvironment底层数据存储对应的是Buffer，一个TaskManager只有一个ShuffleEnvironment，所有的Task共享
-
-**启动Task** Task被分配到单独的线程中，循环执行。Task本身是一个Runnable对象，由TaskManager管理和调度，线程启动后进入`run()`方法。Task是容器，最终启动算子的逻辑封装在StreamTask中，在Task中通过反射机制实例化StreamTask子类，触发`StreamTaask#invoke()`启动真正的业务逻辑执行。在Task初始化中，构建了InputGate组件和ResultPartitionWriter组件，但ResultPartitionWriter还没有注册到ResultPartitionManager，InputGate也并未与上游Task之间建立物理上的数据传输通道，在Task开始执行的过程中完成了实际的关联
+2. 启动Task：Task被分配到单独的线程中，循环执行。Task本身是一个Runnable对象，由TaskManager管理和调度，线程启动后进入`run()`方法。Task是容器，最终启动算子的逻辑封装在StreamTask中，在Task中通过反射机制实例化StreamTask子类，触发StreamTask的`invoke()`启动真正的业务逻辑执行。在Task初始化中，构建了InputGate组件和ResultPartitionWriter组件，但ResultPartitionWriter还没有注册到ResultPartitionManager，InputGate也并未与上游Task之间建立物理上的数据传输通道，在Task开始执行的过程中完成了实际的关联。
 
 ```Java
 // Task执行
@@ -758,35 +734,33 @@ public static void setupPartitionsAndGates(ResultPartitionWriter[] producedParti
 }
 ```
 
-**StreamTask启动** StreamTask是算子的执行容器，在JobGraph中将算子连接在一起进行了优化，在执行层面上对应的是OperatorChain。
-
 ## 作业执行
 
-物理执行图并非Flink的数据结构，而是JobMaster根据ExecutionGraph对作业进行调度后，在各个TaskManager上部署Task后形成的图，描述物理上各个Task对象的关系拓扑，包含上下游连接关系、内存中数据的存储、数据的交换等，是运行时的概念，由Task、ResultPartition & ResultSubPartition、InputGate & InputChannel组成。
+物理执行图并非Flink的数据结构，而是JobMaster根据ExecutionGraph对作业进行调度后，在各个TaskManager上部署Task后形成的图，描述物理上各个Task对象的拓扑关系，包含上下游连接关系、内存中数据的存储、数据的交换等，是运行时的概念，由Task、ResultPartition & ResultSubPartition、InputGate & InputChannel组成。
 
 StreamInputProcessor（输入处理器）是对StreamTask中读取数据行为的抽象，在其实现中要完成数据的读取、处理、输出给下游的过程，分为StreamOneInputProcessor和StreamTwoInputProcessor两种实现。StreamOneInputProcessor用在OneInputStreamTask中，只有1个上游输入；StreamTwoInputProcessor用在TwoInputStreamTask中，有两个上游输入。核心方法是`processInput()`，该方法中调用`emit()`触发数据的读取，将数据反序列化为StreamRecord，交给StreamTaskNetworkOutput，由其出发StreamOperator（算子）的处理，最终触发UDF的`processElement()`，执行用户在DataStream API中编写用户逻辑，处理数据，然后交给下游，整体过程如下：
 
 ```bob-svg
-                     ,---------------------------,
-                     |   StreamInputProcessor    |
-      ,-----------,  | ,-----------------------, |
-  --->| InputGate |--+>|    StreamTaskInput    | |
-      '-----------'  | '-----------------------' |
-                     |             |             |
-                     |             v             |
-                     | ,-----------------------, |
-                     | |    Deserialization    | |
-                     | '-----------------------' |
-                     |             |             |
-                     |             v             |
-                     | ,-----------------------, |  ,----------------,
-                     | |StreamTaskNetworkOutput|-+->| StreamOperator |-->
-                     | '-----------------------' |  '----+-----------'
-                     '---------------------------'       |       ^
-                                                         v       |
-                                                    ,----------------,
-                                                    |       UDF      |
-                                                    '----------------'
+                     .------------------------------.
+                     |    StreamInputProcessor      |
+      .-----------.  |  .-----------------------.   |
+  --->| InputGate |--+->|    StreamTaskInput    |   |
+      '-----------'  |  '-----------+-----------'   |
+                     |              |               |
+                     |              v               |
+                     |  .-----------------------.   |
+                     |  |    Deserialization    |   |
+                     |  '-----------+-----------'   |
+                     |              |               |
+                     |              v               |
+                     |  .-------------------------. |  .----------------.
+                     |  |StreamTaskNetworkOutput  |-+->| StreamOperator |-->
+                     |  '-------------------------' |  '----+-----------'
+                     '------------------------------'       |       ^
+                                                            v       |
+                                                       .------------+---.
+                                                       |       UDF      |
+                                                       '----------------'
 ```
 
 StreamTaskInput（Task输入）是StreamTask的数据输入的抽象，分为StreamTaskNetworkInput和StreamTaskSourceINput两种实现。StreamTaskNetworkInput负责从上游Task获取数据，使用InputGate作为底层读取数据；StreamTaskSourceInput负责从外部数据源获取数据，本质上是使用SourceFunction读取数据，交给下游的Task。
@@ -799,13 +773,11 @@ ResultSubPartition（结果子分区）是结果分区的一部分，负责存�
 
 InputGate（输入网关）时Task的输入数据的封装，和JobGraph中的JobEdge一一对应，对应于上游的ResultPartition。InputGate是InputChannel的容器，用于读取IntermediateResult在并行执行时由上游Task产生的一个或多个ResultPartition。有SingleInputGate、InputGateWithMetrics和UnionInputGate三种实现。SingleInputGate是消费ResultPartition的实体，对应于一个IntermediateResult；UnionInputGate用于将多个InputGate联合起来，当作一个InputGate，一般是对应于上游的多个输出类型相同的IntermediateResult；InputGateWithMetrics是一个带监控统计的InputGate，统计InputGate读取的数据量，单位为byte。
 
-InputChannel（输入通道）和ExecutionEdge一一对应，也和ResultSubPartition一对一相连，即一个InputChannel接收一个ResultSubPartition的输出。有LocalInputChannel、RemoteInputChannel和UnknownInputChannel3种实现。LocalInputChannel对应于本地结果子分区的输入通道，用来在本地进程内不同线程之间的数据交换。LocalInputChannel实际调用`SingleInputGate#notifyChannelNonEmpty()`，这个方法调用`inputChannelsWithData#notifyAll()`，唤醒阻塞在inputChannelsWithData对象实例的所有线程，阻塞在`CheckpointBarrierHandler#getNextNonBlocked()`方法的线程也会被唤醒，返回数据；RemoteInputChannel对应于远程的ResultSubPartition的InputChannel，用来表示跨网络的数据交换；UnknownInputChannel是一种用于占位目的的输入通道，需要占位通道是因为暂未确定相对于Task生产者的位置，在确定上游Task位置之后，如果位于不同的TaskManager则替换为RemoteInputChannel，如果位于相同的TaskManager则替换为LocalInputChannel。
-
-### Task执行
+InputChannel（输入通道）和ExecutionEdge一一对应，也和ResultSubPartition一对一相连，即一个InputChannel接收一个ResultSubPartition的输出。有LocalInputChannel、RemoteInputChannel和UnknownInputChannel3种实现。LocalInputChannel对应于本地结果子分区的输入通道，用来在本地进程内不同线程之间的数据交换。LocalInputChannel实际调用SingleInputGate的`notifyChannelNonEmpty()`，这个方法调用inputChannelsWithData的`notifyAll()`，唤醒阻塞在inputChannelsWithData对象实例的所有线程，阻塞在CheckpointBarrierHandler的`getNextNonBlocked()`方法的线程也会被唤醒，返回数据；RemoteInputChannel对应于远程的ResultSubPartition的InputChannel，用来表示跨网络的数据交换；UnknownInputChannel是一种用于占位目的的输入通道，需要占位通道是因为暂未确定相对于Task生产者的位置，在确定上游Task位置之后，如果位于不同的TaskManager则替换为RemoteInputChannel，如果位于相同的TaskManager则替换为LocalInputChannel。
 
 Flink 1.10引入了类Actor模型的基于Mailbox的单线程Task执行模型，取代之前的依赖于锁机制的多线程Task执行模型，所有的并发操作都通过队列进行排队（Mailbox），单线程（Mailbox线程）依次处理，这样就避免了并发操作。
 
-启动Task进入执行状态，开始读取数据，当有可消费的数据时，则持续读取数据。StreamInputProcessor是数据读取、处理、输出的高层逻辑的载体，由其负责 触发数据的读取，并交给算子处理，然后输出。StreamInputProcessor实际上将具体的数据读取工作交给了StreamTaskInput，当读取了完整的记录之后就开始向下游发送数据，在发送数据的过程中，调用算子进行数据的处理。读取到完成数据记录之后，根据其类型进行不同的处理。
+启动Task进入执行状态，开始读取数据，当有可消费的数据时，则持续读取数据。StreamInputProcessor是数据读取、处理、输出的高层逻辑的载体，由其负责触发数据的读取，并交给算子处理，然后输出。StreamInputProcessor实际上将具体的数据读取工作交给了StreamTaskInput，当读取了完整的记录之后就开始向下游发送数据，在发送数据的过程中，调用算子进行数据的处理。读取到完成数据记录之后，根据其类型进行不同的处理。
 
 对于数据记录（SteamRecord），会在算子中包装用户的业务逻辑，即使用DataStream编写的UDF，进入到算子内部，由算子去执行用户编写的业务逻辑。在算子中处理完毕，数据要交给下一个算子或者Task进行计算，此时会涉及3种算子之间数据传递的情形：
 1. OperatorChain内部的数据传递，发生在OperatorChain所在的本地线程内
@@ -814,7 +786,7 @@ Flink 1.10引入了类Actor模型的基于Mailbox的单线程Task执行模型，
 
 对于Watermark，分两种情景，一种是在OneInputStreamOperator（单流输入算子中）；一种是在TwoInputStreamOperator（双流输入算子）种。对于OneInputStreamOperator，如果有定时服务，则判断是否触发计算，并将Watermark发往下游。对于TwoInputStreamOperator，会选择两个输入流中较小的Watermark作为当前Watermark，之后的处理与OneInputStreamOperator一致。
 
-当SourceStreamTask或一般的StreamTask处于闲置状态（IDLE），不会向下游发送数据或Watermark时，就向下游发送StreamStatus#IDLE状态告知下游，依次向下传递。当恢复向下游发送数据或者Watermark前，首先发送StreamStatus#ACTIVE状态告知下游。StreamStatus状态变化在SourceFunction中产生，SourceTask如果读取不到输入数据，则认为是Idle状态，如果重新读取到数据，则认为是Active状态。只要StreamTask有一个上游的Source Task是Active状态，StreamTask就是Active状态，否则处于Idle状态。由于SourceTask保证在Idle状态和Active状态之间不会发生数据元素，所以StreamTask可以在不需要检查当前状态的情况下安全地处理和传播收到数据元素。当前StreamTask在发送Watermark之前必须检查当前算子的状态，如果当前的状态是Idle，则Watermark会被阻塞，不会向下游发送。
+当SourceStreamTask或一般的StreamTask处于闲置状态（IDLE），不会向下游发送数据或Watermark时，就向下游发送StreamStatus.IDLE状态告知下游，依次向下传递。当恢复向下游发送数据或者Watermark前，首先发送StreamStatus.ACTIVE状态告知下游。StreamStatus状态变化在SourceFunction中产生，SourceTask如果读取不到输入数据，则认为是Idle状态，如果重新读取到数据，则认为是Active状态。只要StreamTask有一个上游的Source Task是Active状态，StreamTask就是Active状态，否则处于Idle状态。由于SourceTask保证在Idle状态和Active状态之间不会发生数据元素，所以StreamTask可以在不需要检查当前状态的情况下安全地处理和传播收到数据元素。当前StreamTask在发送Watermark之前必须检查当前算子的状态，如果当前的状态是Idle，则Watermark会被阻塞，不会向下游发送。
 
 对于LatencyMarker，直接交给下游。
 
@@ -948,8 +920,6 @@ public void emitLatencyMarker(LatencyMarker latencyMarker) {
 ## 作业停止
 
 作业停止主要是资源的清理和释放。JobMaster向所有的TaskManager发出取消作业的指令，TaskManager执行Task的取消指令，进行相关的内存资源的清理，当所有的清理作业完成之后，向JobMaster发出通知，最终JobMaster停止，向ResourceManager归还所有的Slot资源，然后彻底退出作业的执行。
-
-## 作业失败调度
 
 ## 容错
 
