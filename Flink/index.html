@@ -102,7 +102,6 @@
 <ol>
 <li><a href="#datastream-watermark%E7%94%9F%E6%88%90">DataStream Watermark生成</a></li>
 <li><a href="#flink-sql-watermark%E7%94%9F%E6%88%90">Flink SQL Watermark生成</a></li>
-<li><a href="#%E5%A4%9A%E6%B5%81watermark">多流Watermark</a></li>
 </ol>
 </li>
 <li>
@@ -448,7 +447,7 @@
 <div class="gatsby-highlight" data-language="text"><pre style="counter-reset: linenumber NaN" class="language-text line-numbers"><code class="language-text">假设KeyGroup的数量为numberOfKeyGroups
 hash = hash(key)
 KeyGroup = hash % numberOfKeyGroups   // key所属的KeyGroup是确定的
-subtask = KeyGroup * parallelism / numberOfKeyGroups</code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span></span></pre></div>
+subtask = KeyGroup / (numberOfKeyGroups / parallelism)</code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span></span></pre></div>
 <h3 id="状态数据的清理" style="position:relative;"><a href="#%E7%8A%B6%E6%80%81%E6%95%B0%E6%8D%AE%E7%9A%84%E6%B8%85%E7%90%86" aria-label="状态数据的清理 permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>状态数据的清理</h3>
 <p>DataStream作业中可以通过StateDescriptor的<code class="language-text">enableTimeToLive(stateTtlConfig)</code>方法对状态过期进行精细控制，对每一个状态设置清理的策略，StateTtlConfig中可以设置的内容如下：</p>
 <ul>
@@ -534,59 +533,97 @@ stream
     <span class="token punctuation">}</span>
 <span class="token punctuation">}</span></code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre></div>
 <h3 id="水印" style="position:relative;"><a href="#%E6%B0%B4%E5%8D%B0" aria-label="水印 permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>水印</h3>
-<p>水印（Watermark）定义何时停止等待较早的事件，事件时间为t的水印代表t之前的事件都已经到达（水印之后时间戳&#x3C;=t的任何事件都被称为延迟事件），Flink中事件时间的处理取决于水印生成器。通常用Watermark结合窗口来正确地处理乱序事件，水印用于权衡延迟和完整性（正确性），缩短水印边界时间来降低延迟，延长水印水印边界时间提高完整性，也可以实施混合方案，先快速产生初步结果，然后再处理延迟数据时更新这些结果。</p>
-<h4 id="datastream-watermark生成" style="position:relative;"><a href="#datastream-watermark%E7%94%9F%E6%88%90" aria-label="datastream watermark生成 permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>DataStream Watermark生成</h4>
-<p>通常水印在SourceFunction中生成<sup id="fnref-14"><a href="#fn-14" class="footnote-ref">14</a></sup>，Flink提供了额外的机制，允许在调用DataStream API操作之后，根据业务逻辑的需要，使用时间戳和水印生成器修改数据记录的时间戳和水印。</p>
-<p>SourceFunction通过SourceContext的<code class="language-text">collectWithTimestamp()</code>方法为数据元素分配时间戳，<code class="language-text">emitWatermark()</code>方法向下游发送水印。</p>
-<div class="gatsby-highlight" data-language="java"><pre style="counter-reset: linenumber NaN" class="language-java line-numbers"><code class="language-java"><span class="token comment">// SourceFunction中为数据元素分配时间戳和生成Watermark</span>
-<span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">run</span><span class="token punctuation">(</span><span class="token class-name">SourceContext</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">MyType</span><span class="token punctuation">></span></span> ctx<span class="token punctuation">)</span> <span class="token punctuation">{</span>
-    <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token comment">/* condition */</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
-    <span class="token operator">+</span>yType next <span class="token operator">=</span> <span class="token function">getNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-    <span class="token operator">+</span>tx<span class="token punctuation">.</span><span class="token function">collectWithTimestamp</span><span class="token punctuation">(</span>next<span class="token punctuation">,</span> next<span class="token punctuation">.</span><span class="token function">getEventTimestamp</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-    <span class="token operator">+</span><span class="token operator">/</span> 生成<span class="token class-name">Watermark</span>并发送给下游
-    <span class="token operator">+</span>f <span class="token punctuation">(</span>next<span class="token punctuation">.</span><span class="token function">hasWatermarkTime</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
-    <span class="token operator">+</span>   ctx<span class="token punctuation">.</span><span class="token function">emitWatermark</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">Watermark</span><span class="token punctuation">(</span>next<span class="token punctuation">.</span><span class="token function">getWatermarkTime</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
-    <span class="token operator">+</span>
-    <span class="token punctuation">}</span>
-<span class="token punctuation">}</span></code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre></div>
-<p>DataStream API中使用TimestampAssigner接口定义了时间戳的提取行为，包括AssignerWithPeriodicWatermarks和AssignerWithPunctuatedWatermarks，分别代表不同的Watermark生成策略。AssignerWithPeriodicWatermarks是周期性生成Watermark策略的顶层抽象接口，该接口的实现类周期性地生成Watermark，而不会针对每一个事件都生成。AssignerWithPunctuatedWatermarks对每一个事件都会尝试进行Watermark生成，但是如果生成的Watermark是null或Watermark小于之前的Watermark，则该Watermark不会发往下游<sup id="fnref-15"><a href="#fn-15" class="footnote-ref">15</a></sup>。</p>
-<h4 id="flink-sql-watermark生成" style="position:relative;"><a href="#flink-sql-watermark%E7%94%9F%E6%88%90" aria-label="flink sql watermark生成 permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Flink SQL Watermark生成</h4>
-<p>Flink SQL Watermark主要是在TableSource中生成的，其定义了3类生成策略：</p>
+<p>水印（Watermark）是流处理中的重要抽象，定义何时停止等待较早的事件，事件时间为t的水印代表t之前的事件都已经到达（水印之后时间戳&#x3C;=t的任何事件都被称为延迟事件）。通常用水印结合窗口来正确地处理乱序事件，水印用于权衡延迟和完整性（正确性），缩短水印边界时间来降低延迟，延长水印水印边界时间提高完整性，也可以实施混合方案，先快速产生初步结果，然后再处理延迟数据时更新这些结果。</p>
+<p>在并行流下使用水印可能会出现两类问题，一类是在非Source算子中生成水印导致数据乱序，另一类是数据特征导致的空闲Source和事件时间倾斜。</p>
+<p>水印和记录（StreamRecor）一样是以StreamElement实例在算子间流转。</p>
+<p>水印主要有两大类：</p>
 <ul>
-<li>PeridocWatermarksAssigner：周期性（一定时间间隔或达到一定的记录条数）地产生一个Watermark
+<li>PeridocWatermarks：周期性（一定时间间隔或达到一定的记录条数）地产生一个Watermark
 <ul>
-<li>AscendingTimestamps：递增Watermark，作用在Flink SQL中的Rowtime属性上，Watermark = 当前收到的数据元素的最大时间戳 - 1<sup id="fnref-16"><a href="#fn-16" class="footnote-ref">16</a></sup></li>
-<li>BoundedOutOfOrderTimestamp：固定延迟Watermark，作用在Flink SQL的Rowtime属性上，Watermark = 当前收到的数据元素的最大时间戳-固定延迟</li>
+<li>AscendingTimestamps：递增Watermark</li>
+<li>BoundedOutOfOrderTimestamp：固定延迟Watermark</li>
 </ul>
 </li>
-<li>PuntuatedWatermarkAssigner：数据流中每一个递增的EventTime都会产生一个Watermark<sup id="fnref-17"><a href="#fn-17" class="footnote-ref">17</a></sup></li>
-<li>PreserveWatermak：用于DataStream API和Table &#x26; SQL混合编程，此时，Flink SQL中不设定Watermark策略，使用底层DataStream中的Watermark策略也是可以的，这时Flink SQL的Table Source中不做处理</li>
+<li>PuntuatedWatermark：数据流中每一个递增的EventTime都会产生一个Watermark<sup id="fnref-14"><a href="#fn-14" class="footnote-ref">14</a></sup></li>
 </ul>
-<h4 id="多流watermark" style="position:relative;"><a href="#%E5%A4%9A%E6%B5%81watermark" aria-label="多流watermark permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>多流Watermark</h4>
-<p>Flink内部实现每一个边上只能有一个递增的Watermark，每当出现多流携带EventTime汇聚到一起（GroupBy或Union）时，Flink会选择所有流入的EventTime中最小的一个向下游流出，从而保证Watermark的单调递增和数据的完整性。</p>
-<p>Watermark是在Source Function中生成或者在后续的DataStream API中生成的。Flink作业一般包含多个Task，每个Task运行一个或一组算子（OperatorChain）实例，Task在生成Watermark的时候是相互独立的，即在作业中存在多个并行的Watermark。Watermark在作业的DAG从上游向下游传递，算子收到上游Watermark后会更新其Watermark，如果新的Watermark大于算子的当前Watermark，则更新算子的Watermark为新Watermark，并发送给下游算子。</p>
-<p>对于有多个上游输入的算子（如Union、KeyBy、partition之后的算子），在Flink底层执行模型上，多流输入会被分解为多个双流输入，所以对于多流Watermark的处理也就是双流Watermark的处理。Flink会选择两条流中较小的Watermark，即<code class="language-text">Min(input1Watermark, input2Watermark)</code>，与算子当前的Watermark比较，如果大于算子当前的Watermark，则更新算子的Watermark为新的Watermark，并发送给下游。</p>
-<div class="gatsby-highlight" data-language="java"><pre style="counter-reset: linenumber NaN" class="language-java line-numbers"><code class="language-java"><span class="token comment">// 双流输入的StreamOperator Watermark处理</span>
+<h4 id="datastream-watermark生成" style="position:relative;"><a href="#datastream-watermark%E7%94%9F%E6%88%90" aria-label="datastream watermark生成 permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>DataStream Watermark生成</h4>
+<p>WatermarkGenerator基于事件或周期性生成水印，其<code class="language-text">onTime()</code>方法为每个事件调用一次，用于记录最大时间戳或生成水印（需设置ExecutionConfig.setAutoWatermarkInterval(0)），其<code class="language-text">onPeriodicEmit()</code>方法被周期性触发，用于生成水印，触发间隔由ExecutionConfig.getAutoWatermarkInterval()设置，默认为200ms，可通过streamExecutionEnvironment.getConfig().setAutoWatermarkInterval(interval)设置。</p>
+<p>WatermarkStrategy函数接口（唯一抽象方法是<code class="language-text">createWatermarkGenerator()</code>）定义如何生成水印，组装了WaterMarkGenerator（用于生成Watermark）和TimestampAssigner（用于提取事件时间，默认为RecordTimestampAssigner）。<code class="language-text">withTimestampAssigner()</code>方法用于设置TimestampAssigner，<code class="language-text">withIdleness(duration)</code>方法用于增加空闲Source发现。Flink中内置了两种WatermarkStrategy实现（实现类都是BoundedOutOfOrdernessWatermarks）：</p>
+<ul>
+<li>WatermarkStrategy#forMonotonousTimestamps()：使用单调递增的时间戳分配器，周期性以当前最大时间戳生成水印，适用于时间戳单调递增</li>
+<li>WatermarkStrategy#forBoundedOutOfOrderness()：使用固定最大延迟的时间戳分配器，周期性以当前最大时间戳减去允许的最大延迟生成水印，适用于乱序事件</li>
+</ul>
+<p>在DataStream API中有两种生成WatermarkStrategy的方法:</p>
+<ul>
+<li>直接在Source中生成，StreamExecutionEnvironment.fromSource(source, watermarkStrategy, sourceName)</li>
+<li>调用DataStream的assignTimestampsAndWatermarks(watermarkStrategy)方法</li>
+</ul>
+<p>当数据源各个分区内延迟不一时，Source算子会为每个分区生成单独的Watermark并进行对齐，非Source算子由于经过上游算子处理无法感知各个分区的存在，其生成的Watermark可能无法表达各个分区内数据的情况。在并行流下对于多分区数据源应该在Source算子生成Watermark。</p>
+<p><strong>水印传播</strong> 对于无需缓存数据的算子（如map），在接收到Watermark后直接发向下游。对于需要缓存数据的算子（如window），如果接收到的Watermark没有触发计算，则直接发向下游，否则等计算结果发送后再发送下游。在并行流中，还需进行Watermark对齐，即 算子会将来自上游各个算子的最小Watermark作为当前Watermark，并向下游的所有算子广播Watermark。</p>
+<ul>
+<li>空闲Source问题：在多分区情况下，如果存在长时间没有数据的空闲分区，由于Watermark对齐，Watermark就无法推进，会导致算子缓存过多数据，使得作业状态不断增大，影响Checkpoint，另外也会导致计算结果延迟变大。可以通过WatermarkStrategy的<code class="language-text">withIdleness()</code>方法设置判断Source为空闲的最大时间间隔来解决空闲Source问题，Watermark对齐时不会考虑空闲Source</li>
+<li>事件时间倾斜问题：在多分区情况下，部分分区中数据的事件时间推进远落后于其他分区，由于Watermark对齐，Watermark就无法推进。Flink 1.15中通过在WatermarkStrategy中添加<code class="language-text">withWatermarkAlignment()</code>来实现各个Source的Watermark同步推进（必须在Source算子生成Watermark）。设置withWatermarkAlignment时，如果两个Source间Watermark的差值超过了一个给定值maxAllowedWatermarkDrift, 那么停止读取Watermark推进较快的Source, 等到两个Source间的Watermark小于maxAllowedWatermarkDrift时再重新开始读取该Source，在实现上Flink增加了一个协调者为各个Source的Watermark进行校准, 每个Source实例需要定期向协调者报告目前的Watermark, 并接受协调者的返回决定是否需要继续拉取数据。withWatermarkAlignment有三个参数：第一个参数用于对Source进行分组, 只有在同一个分组中的Source才会实行Watermark同步；第二个参数表示maxAllowedWatermarkDrift；第三个参数表示同步间隔。</li>
+</ul>
+<div class="gatsby-highlight" data-language="java"><pre style="counter-reset: linenumber NaN" class="language-java line-numbers"><code class="language-java"><span class="token comment">// SourceFunction中为数据元素分配时间戳和生成Watermark</span>
+<span class="token comment">// SourceFunction通过SourceContext的collectWithTimestamp()方法为数据元素分配时间戳，emitWatermark()方法向下游发送水印</span>
+<span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">run</span><span class="token punctuation">(</span><span class="token class-name">SourceContext</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">MyType</span><span class="token punctuation">></span></span> ctx<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token comment">/* condition */</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token class-name">MyType</span> next <span class="token operator">=</span> <span class="token function">getNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        ctx<span class="token punctuation">.</span><span class="token function">collectWithTimestamp</span><span class="token punctuation">(</span>next<span class="token punctuation">,</span> next<span class="token punctuation">.</span><span class="token function">getEventTimestamp</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">// 生成Watermark并发送给下游</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>next<span class="token punctuation">.</span><span class="token function">hasWatermarkTime</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+           ctx<span class="token punctuation">.</span><span class="token function">emitWatermark</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">Watermark</span><span class="token punctuation">(</span>next<span class="token punctuation">.</span><span class="token function">getWatermarkTime</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+<span class="token comment">// 双流输入的StreamOperator Watermark处理</span>
 <span class="token comment">// AbstractStreamOperator.java</span>
 <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">processWatermark1</span><span class="token punctuation">(</span><span class="token class-name">Watermark</span> mark<span class="token punctuation">)</span> <span class="token keyword">throws</span> <span class="token class-name">Exception</span> <span class="token punctuation">{</span>
     input1Watermark <span class="token operator">=</span> mark<span class="token punctuation">.</span><span class="token function">getTimestamp</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
     <span class="token keyword">long</span> newMin <span class="token operator">=</span> <span class="token class-name">Math</span><span class="token punctuation">.</span><span class="token function">min</span><span class="token punctuation">(</span>input1Watermark<span class="token punctuation">,</span> input2Watermark<span class="token punctuation">)</span><span class="token punctuation">;</span>
     <span class="token keyword">if</span> <span class="token punctuation">(</span>newMin <span class="token operator">></span> combinedWatermark<span class="token punctuation">)</span> <span class="token punctuation">{</span>
-    <span class="token operator">+</span>ombinedWatermark <span class="token operator">=</span> newMin<span class="token punctuation">;</span>
-    <span class="token operator">+</span><span class="token function">rocessWatermark</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">Watermark</span><span class="token punctuation">(</span>combinedWatermark<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        combinedWatermark <span class="token operator">=</span> newMin<span class="token punctuation">;</span>
+        <span class="token function">processWatermark</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">Watermark</span><span class="token punctuation">(</span>combinedWatermark<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
     <span class="token punctuation">}</span>
 <span class="token punctuation">}</span>
 <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">processWatermark2</span><span class="token punctuation">(</span><span class="token class-name">Watermark</span> mark<span class="token punctuation">)</span> <span class="token keyword">throws</span> <span class="token class-name">Exception</span> <span class="token punctuation">{</span>
     input2Watermark <span class="token operator">=</span> mark<span class="token punctuation">.</span><span class="token function">getTimestamp</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
     <span class="token keyword">long</span> newMin <span class="token operator">=</span> <span class="token class-name">Math</span><span class="token punctuation">.</span><span class="token function">min</span><span class="token punctuation">(</span>input1Watermark<span class="token punctuation">,</span> input2Watermark<span class="token punctuation">)</span><span class="token punctuation">;</span>
     <span class="token keyword">if</span> <span class="token punctuation">(</span>newMin <span class="token operator">></span> combinedWatermark<span class="token punctuation">)</span> <span class="token punctuation">{</span>
-    <span class="token operator">+</span>ombinedWatermark <span class="token operator">=</span> newMin<span class="token punctuation">;</span>
-    <span class="token operator">+</span><span class="token function">rocessWatermark</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">Watermark</span><span class="token punctuation">(</span>combinedWatermark<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        combinedWatermark <span class="token operator">=</span> newMin<span class="token punctuation">;</span>
+        p <span class="token function">rocessWatermark</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">Watermark</span><span class="token punctuation">(</span>combinedWatermark<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
     <span class="token punctuation">}</span>
-<span class="token punctuation">}</span></code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre></div>
+<span class="token punctuation">}</span></code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre></div>
+<h4 id="flink-sql-watermark生成" style="position:relative;"><a href="#flink-sql-watermark%E7%94%9F%E6%88%90" aria-label="flink sql watermark生成 permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Flink SQL Watermark生成</h4>
+<div class="gatsby-highlight" data-language="text"><pre style="counter-reset: linenumber NaN" class="language-text line-numbers"><code class="language-text">语法：watermark for rowtimeColumnName as &lt;watermark_strategy_expression></code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span></span></pre></div>
+<p>Flink SQL Watermark主要是在TableSource中生成的，其定义了3类生成策略：</p>
+<ul>
+<li>PeridocWatermarksAssigner：周期性（一定时间间隔或达到一定的记录条数）地产生一个Watermark
+<ul>
+<li>AscendingTimestamps：递增Watermark，作用在Flink SQL中的Rowtime属性上，Watermark = 当前收到的数据元素的最大时间戳 - 1<sup id="fnref-15"><a href="#fn-15" class="footnote-ref">15</a></sup></li>
+<li>BoundedOutOfOrderTimestamp：固定延迟Watermark，作用在Flink SQL的Rowtime属性上，Watermark = 当前收到的数据元素的最大时间戳-固定延迟</li>
+</ul>
+</li>
+<li>PuntuatedWatermarkAssigner：数据流中每一个递增的EventTime都会产生一个Watermark<sup id="fnref-16"><a href="#fn-16" class="footnote-ref">16</a></sup></li>
+<li>PreserveWatermak：用于DataStream API和Table &#x26; SQL混合编程，此时，Flink SQL中不设定Watermark策略，使用底层DataStream中的Watermark策略也是可以的，这时Flink SQL的Table Source中不做处理</li>
+</ul>
+<p>WatermarkStrategy的返回值是Nullable(Bigint)或Nullable(Timestamp(3))，每个记录都会生成Watermark，但只有当生成的Watermark不为null, 且大于之前已经发出的最大Watermark时, 当前Watermark才会下发。Watermark发出的时间间隔由ExecutionConfig.getAutoWatermarkInterval()决定, 如果要实现Punctuated模式, 需要调用ExecutionConfig.setAutoWatermarkInterval(0)。Rowtime属性列也可以是一个计算字段。在DDL中定义的WatermarkStrategy会尽可能下推到Source算子</p>
 <h3 id="定时器" style="position:relative;"><a href="#%E5%AE%9A%E6%97%B6%E5%99%A8" aria-label="定时器 permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>定时器</h3>
-<p>定时器（实现为InternalTimer接口，InternalTimer实现类为InternalTimerImpl）是Flink提供的用于感知并利用处理时间/事件时间变化的机制。Timer是以Key级别注册的。</p>
-<p>定时器服务（实现为TimerService接口和InternalTimerService接口）用来获取当前事件时间（<code class="language-text">currentWatermark()</code>）和处理时间（<code class="language-text">currentProcessingTime()</code>）、注册或删除定时器，仅支持keyed operator，InternalTimerServiceImpl是基于Java堆实现的InternalTimerService，其中使用两个包含TimerHeapInternalTimer的优先队列（KeyGroupedInternalPriorityQueue）分别维护事件时间定时器和处理时间定时器，定时器的注册和删除都是通过优先队列添加或删除元素实现的。AbstractStreamOperator（所有流算子的基类）中的<code class="language-text">getInternalTimerService()</code>方法（最终调用InternalTimeServiceManager（具体实现为InternalTimeServiceManagerImpl）中的getInternalTimerService()方法）用于获取InternalTimerService实例，一个算子可以有多个定时器服务实例，定时器服务由名称区分。</p>
+<p>定时器（Timer）是Flink提供的用于感知时间变化并进行处理的机制，本质上是通过ScheduledThreadPoolExecutor的<code class="language-text">schedule()</code>实现的，定时器触发时会调用triggable的<code class="language-text">onTimer()</code>方法。定时器实现为InternalTimer接口，包含四个要素：</p>
+<ul>
+<li>key</li>
+<li>namespace：命名空间，</li>
+<li>timestamp：触发时间戳</li>
+<li>timerHeapIndex：在优先队列中的下标</li>
+</ul>
+<p>定时器有以下四个特点：</p>
+<ul>
+<li>定时器只允许在按键值分区的数据流上注册</li>
+<li>对每个键值和时间戳只能注册一个定时器，重复注册的定时器仅最后一个生效</li>
+<li>检查点进行时定时器和其他状态一起写入检查点</li>
+<li>定时器是可以被删除的</li>
+</ul>
+<p>定时器服务（TimerService）用于管理定时器，定时器按触发时间排序保存在优先队列中。实现为TimerService接口和InternalTimerService接口，可以获取当前事件时间（<code class="language-text">currentWatermark()</code>）和处理时间（<code class="language-text">currentProcessingTime()</code>）、注册或删除定时器，仅支持keyed operator。InternalTimerServiceImpl是基于Java堆实现的InternalTimerService，其中使用两个包含TimerHeapInternalTimer的优先队列（KeyGroupedInternalPriorityQueue）分别维护事件时间定时器和处理时间定时器，定时器的注册和删除都是通过优先队列添加或删除元素实现的。AbstractStreamOperator（所有流算子的基类）中的<code class="language-text">getInternalTimerService()</code>方法<sup id="fnref-17"><a href="#fn-17" class="footnote-ref">17</a></sup>用于获取InternalTimerService实例。一个算子可以有多个定时器服务实例，定时器服务由名称区分。</p>
 <p>InternalTimeServiceManager用于管理各个InternalTimeService，使用HashMap维护一个键下所有的定时器服务实例（键为定时器服务实例名称），如果使用同一个名称创建多次定时器服务实例，后续都返回第一次创建的实例。</p>
 <p>Flink的定时器（Timer）使用InternalTimer接口定义行为，窗口的触发器与定时器是紧密联系的，在InternalTimerServiceImpl中触发Timer然后回调用户逻辑。对于事件时间，会根据Watermark的时间，从事件时间的定时器队列中找到比给定时间小的所有定时器，触发该Timer所在的算子，然后由算子去调用UDF中的<code class="language-text">onTimer()</code>方法。处理时间也是类似的逻辑，区别在于，处理时间是从处理时间Timer优先级队列中找到Timer，处理时间依赖于当前系统，所以其使用的是周期性调度</p>
 <div class="gatsby-highlight" data-language="java"><pre style="counter-reset: linenumber NaN" class="language-java line-numbers"><code class="language-java"><span class="token keyword">public</span> <span class="token keyword">interface</span> <span class="token class-name">TimerService</span> <span class="token punctuation">{</span>
@@ -717,6 +754,39 @@ stream
         <span class="token keyword">return</span> keyedTimeServiceHandler<span class="token punctuation">.</span><span class="token function">getInternalTimerService</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> keyedStateBackend<span class="token punctuation">.</span><span class="token function">getKeySerializer</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> namespaceSerializer<span class="token punctuation">,</span> triggerable<span class="token punctuation">)</span><span class="token punctuation">;</span>
     <span class="token punctuation">}</span>
 <span class="token punctuation">}</span></code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre></div>
+<p><strong>事件时间定时器触发</strong> InternalTimeServiceManagerImpl的<code class="language-text">advanceWatermark()</code>方法</p>
+<p><strong>处理时间定时器触发</strong> ProcessingTimeService定义当前处理时间并执行所有相关操作，如注册定时器，具体实现是SystemProcessingTimeService。SystemProcessingTimeService使用System.currentTimeMillis()作为当前处理时间，使用调度线程池（ScheduledThreadPoolExecutor）注册定时器。</p>
+<div class="gatsby-highlight" data-language="text"><pre style="counter-reset: linenumber NaN" class="language-text line-numbers"><code class="language-text">class SystemProcessingTimeService implements TimerService {
+    ScheduledThreadPoolExecutor timerService;     // 调度并触发任务的线程池
+
+    SystemProcessingTimeService(ExceptionHandler exceptionHandler, ThreadFactory threadFactory) {
+
+        this.exceptionHandler = checkNotNull(exceptionHandler);
+        this.status = new AtomicInteger(STATUS_ALIVE);
+        this.quiesceCompletedFuture = new CompletableFuture&lt;>();
+
+        this.timerService = new ScheduledTaskExecutor(1);
+        // tasks should be removed if the future is canceled
+        this.timerService.setRemoveOnCancelPolicy(true);
+
+        // make sure shutdown removes all pending tasks
+        this.timerService.setContinueExistingPeriodicTasksAfterShutdownPolicy(false);
+        this.timerService.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+    }
+
+    public long getCurrentProcessingTime() {
+        return System.currentTimeMillis();
+    }
+
+    // 注册一个指定时间运行的任务
+    public ScheduledFuture&lt;?> registerTimer(long timestamp, ProcessingTimeCallback callback) {
+
+        long delay = ProcessingTimeServiceUtil.getProcessingTimeDelay(
+                        timestamp, getCurrentProcessingTime());
+        return timerService.schedule(
+                    new ScheduledTask(status, exceptionHandler, callback, timestamp, 0), delay, TimeUnit.MILLISECONDS);
+    }
+}</code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre></div>
 <h4 id="优先级队列" style="position:relative;"><a href="#%E4%BC%98%E5%85%88%E7%BA%A7%E9%98%9F%E5%88%97" aria-label="优先级队列 permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>优先级队列</h4>
 <p>Flink在优先级队列中使用了KeyGroup，是按照KeyGroup去重的，并不是按照全局的Key去重。Flink自己实现了优先级队列来管理Timer，共有两种实现：</p>
 <ul>
@@ -1613,10 +1683,10 @@ env<span class="token punctuation">.</span><span class="token function">getCheck
 <li id="fn-11">定时清理状态存在可能因为状态被清理而导致计算结果不完全准确的风险，过期时间一般为1.5天左右<a href="#fnref-11" class="footnote-backref">↩</a></li>
 <li id="fn-12">滚动窗口是一种特殊的滑动窗口<a href="#fnref-12" class="footnote-backref">↩</a></li>
 <li id="fn-13">窗口的生命周期：一个窗口在第一个属于它的元素到达时就会被创建，然后在时间超过窗口的“结束时间戳 + 用户定义的 allowed lateness”时 被完全删除<a href="#fnref-13" class="footnote-backref">↩</a></li>
-<li id="fn-14">如果是并行计算的任务，多个并行执行的Source Function相互独立产生各自的水印<a href="#fnref-14" class="footnote-backref">↩</a></li>
-<li id="fn-15">发往下游也不会有任何效果，不会触发任何窗口的执行<a href="#fnref-15" class="footnote-backref">↩</a></li>
-<li id="fn-16">减1是为了确保有最大时间戳的事件不会被当作迟到数据丢弃<a href="#fnref-16" class="footnote-backref">↩</a></li>
-<li id="fn-17">实际生产中Punctuated方式在TPS很高的场景下会产生大量的Watermark，在一定程度上会对下游算子造成压力，所以只有在实时性要求非常高的场景下才会选择Punctuated的方式进行Watermark的生成<a href="#fnref-17" class="footnote-backref">↩</a></li>
+<li id="fn-14">实际生产中Punctuated方式在TPS很高的场景下会产生大量的Watermark，在一定程度上会对下游算子造成压力，所以只有在实时性要求非常高的场景下才会选择Punctuated的方式进行Watermark的生成<a href="#fnref-14" class="footnote-backref">↩</a></li>
+<li id="fn-15">减1是为了确保有最大时间戳的事件不会被当作迟到数据丢弃<a href="#fnref-15" class="footnote-backref">↩</a></li>
+<li id="fn-16">实际生产中Punctuated方式在TPS很高的场景下会产生大量的Watermark，在一定程度上会对下游算子造成压力，所以只有在实时性要求非常高的场景下才会选择Punctuated的方式进行Watermark的生成<a href="#fnref-16" class="footnote-backref">↩</a></li>
+<li id="fn-17">最终调用InternalTimeServiceManager（具体实现为InternalTimeServiceManagerImpl）中的getInternalTimerService()方法<a href="#fnref-17" class="footnote-backref">↩</a></li>
 <li id="fn-18">借鉴了Chandy-Lamport算法，在数据源端插入 屏障（Barrier）来替代Chandy-Lamport算法中的Marker，通过控制屏障的同步来实现快照的备份和精确一次（Exactly-Once）语义<a href="#fnref-18" class="footnote-backref">↩</a></li>
 <li id="fn-19">不同检查点对应的多个屏障可以在流中同时出现，即 多个检查点可以同时发生<a href="#fnref-19" class="footnote-backref">↩</a></li>
 <li id="fn-20">阻塞输入通道有负面效果，一旦某个输入通道发生延迟，屏障迟迟未到，会导致其它通道全部堵塞，系统吞吐大幅下降<a href="#fnref-20" class="footnote-backref">↩</a></li>
@@ -1632,4 +1702,4 @@ env<span class="token punctuation">.</span><span class="token function">getCheck
           >
             window.___chunkMapping="{\"app\":[\"/app-259ad5fd3eaa0616e44d.js\"],\"component---src-pages-404-js\":[\"/component---src-pages-404-js-9c78d58f6abce9076abd.js\"],\"component---src-pages-index-js\":[\"/component---src-pages-index-js-350e9b4aa85349fee1e3.js\"],\"component---src-pages-using-typescript-tsx\":[\"/component---src-pages-using-typescript-tsx-2be6a68e8fced3deaf4f.js\"],\"component---src-templates-blog-post-js\":[\"/component---src-templates-blog-post-js-c66e12eb4b10a9ee344e.js\"]}";
           </script>
-        <script>window.___webpackCompilationHash="248615b58c4698496d93";</script><script src="/webpack-runtime-16cd3894b0ddbfded6b6.js" async></script><script src="/framework-379b7ea7c44f25b32429.js" async></script><script src="/app-259ad5fd3eaa0616e44d.js" async></script><!-- slice-end id="_gatsby-scripts-1" --></body></html>
+        <script>window.___webpackCompilationHash="c8248d5789cb6e8f2211";</script><script src="/webpack-runtime-16cd3894b0ddbfded6b6.js" async></script><script src="/framework-379b7ea7c44f25b32429.js" async></script><script src="/app-259ad5fd3eaa0616e44d.js" async></script><!-- slice-end id="_gatsby-scripts-1" --></body></html>
