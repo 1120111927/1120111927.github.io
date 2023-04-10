@@ -369,7 +369,7 @@ KeyedState重分布：基于Key-Group，每个Key隶属于唯一的Key-Group，K
 假设KeyGroup的数量为numberOfKeyGroups
 hash = hash(key)
 KeyGroup = hash % numberOfKeyGroups   // key所属的KeyGroup是确定的
-subtask = KeyGroup * parallelism / numberOfKeyGroups
+subtask = KeyGroup / (numberOfKeyGroups / parallelism)
 ```
 
 ### 状态数据的清理
@@ -527,31 +527,75 @@ public Collection<TimeWindow> assignWindows(Object element, long timestamp, Wind
 
 ### 水印
 
-水印（Watermark）定义何时停止等待较早的事件，事件时间为t的水印代表t之前的事件都已经到达（水印之后时间戳<=t的任何事件都被称为延迟事件），Flink中事件时间的处理取决于水印生成器。通常用Watermark结合窗口来正确地处理乱序事件，水印用于权衡延迟和完整性（正确性），缩短水印边界时间来降低延迟，延长水印水印边界时间提高完整性，也可以实施混合方案，先快速产生初步结果，然后再处理延迟数据时更新这些结果。
+水印（Watermark）是流处理中的重要抽象，定义何时停止等待较早的事件，事件时间为t的水印代表t之前的事件都已经到达（水印之后时间戳<=t的任何事件都被称为延迟事件）。通常用水印结合窗口来正确地处理乱序事件，水印用于权衡延迟和完整性（正确性），缩短水印边界时间来降低延迟，延长水印水印边界时间提高完整性，也可以实施混合方案，先快速产生初步结果，然后再处理延迟数据时更新这些结果。
+
+在并行流下使用水印可能会出现两类问题，一类是在非Source算子中生成水印导致数据乱序，另一类是数据特征导致的空闲Source和事件时间倾斜。
+
+水印和记录（StreamRecor）一样是以StreamElement实例在算子间流转。
+
+水印主要有两大类：
++ PeridocWatermarks：周期性（一定时间间隔或达到一定的记录条数）地产生一个Watermark
+    + AscendingTimestamps：递增Watermark
+    + BoundedOutOfOrderTimestamp：固定延迟Watermark
++ PuntuatedWatermark：数据流中每一个递增的EventTime都会产生一个Watermark^[实际生产中Punctuated方式在TPS很高的场景下会产生大量的Watermark，在一定程度上会对下游算子造成压力，所以只有在实时性要求非常高的场景下才会选择Punctuated的方式进行Watermark的生成]
 
 #### DataStream Watermark生成
 
-通常水印在SourceFunction中生成^[如果是并行计算的任务，多个并行执行的Source Function相互独立产生各自的水印]，Flink提供了额外的机制，允许在调用DataStream API操作之后，根据业务逻辑的需要，使用时间戳和水印生成器修改数据记录的时间戳和水印。
+WatermarkGenerator基于事件或周期性生成水印，其`onTime()`方法为每个事件调用一次，用于记录最大时间戳或生成水印（需设置ExecutionConfig.setAutoWatermarkInterval(0)），其`onPeriodicEmit()`方法被周期性触发，用于生成水印，触发间隔由ExecutionConfig.getAutoWatermarkInterval()设置，默认为200ms，可通过streamExecutionEnvironment.getConfig().setAutoWatermarkInterval(interval)设置。
 
-SourceFunction通过SourceContext的`collectWithTimestamp()`方法为数据元素分配时间戳，`emitWatermark()`方法向下游发送水印。
+WatermarkStrategy函数接口（唯一抽象方法是`createWatermarkGenerator()`）定义如何生成水印，组装了WaterMarkGenerator（用于生成Watermark）和TimestampAssigner（用于提取事件时间，默认为RecordTimestampAssigner）。`withTimestampAssigner()`方法用于设置TimestampAssigner，`withIdleness(duration)`方法用于增加空闲Source发现。Flink中内置了两种WatermarkStrategy实现（实现类都是BoundedOutOfOrdernessWatermarks）：
++ WatermarkStrategy#forMonotonousTimestamps()：使用单调递增的时间戳分配器，周期性以当前最大时间戳生成水印，适用于时间戳单调递增
++ WatermarkStrategy#forBoundedOutOfOrderness()：使用固定最大延迟的时间戳分配器，周期性以当前最大时间戳减去允许的最大延迟生成水印，适用于乱序事件
+
+在DataStream API中有两种生成WatermarkStrategy的方法: 
++ 直接在Source中生成，StreamExecutionEnvironment.fromSource(source, watermarkStrategy, sourceName)
++ 调用DataStream的assignTimestampsAndWatermarks(watermarkStrategy)方法
+
+当数据源各个分区内延迟不一时，Source算子会为每个分区生成单独的Watermark并进行对齐，非Source算子由于经过上游算子处理无法感知各个分区的存在，其生成的Watermark可能无法表达各个分区内数据的情况。在并行流下对于多分区数据源应该在Source算子生成Watermark。
+
+**水印传播** 对于无需缓存数据的算子（如map），在接收到Watermark后直接发向下游。对于需要缓存数据的算子（如window），如果接收到的Watermark没有触发计算，则直接发向下游，否则等计算结果发送后再发送下游。在并行流中，还需进行Watermark对齐，即 算子会将来自上游各个算子的最小Watermark作为当前Watermark，并向下游的所有算子广播Watermark。
++ 空闲Source问题：在多分区情况下，如果存在长时间没有数据的空闲分区，由于Watermark对齐，Watermark就无法推进，会导致算子缓存过多数据，使得作业状态不断增大，影响Checkpoint，另外也会导致计算结果延迟变大。可以通过WatermarkStrategy的`withIdleness()`方法设置判断Source为空闲的最大时间间隔来解决空闲Source问题，Watermark对齐时不会考虑空闲Source
++ 事件时间倾斜问题：在多分区情况下，部分分区中数据的事件时间推进远落后于其他分区，由于Watermark对齐，Watermark就无法推进。Flink 1.15中通过在WatermarkStrategy中添加`withWatermarkAlignment()`来实现各个Source的Watermark同步推进（必须在Source算子生成Watermark）。设置withWatermarkAlignment时，如果两个Source间Watermark的差值超过了一个给定值maxAllowedWatermarkDrift, 那么停止读取Watermark推进较快的Source, 等到两个Source间的Watermark小于maxAllowedWatermarkDrift时再重新开始读取该Source，在实现上Flink增加了一个协调者为各个Source的Watermark进行校准, 每个Source实例需要定期向协调者报告目前的Watermark, 并接受协调者的返回决定是否需要继续拉取数据。withWatermarkAlignment有三个参数：第一个参数用于对Source进行分组, 只有在同一个分组中的Source才会实行Watermark同步；第二个参数表示maxAllowedWatermarkDrift；第三个参数表示同步间隔。
+
 
 ```Java
 // SourceFunction中为数据元素分配时间戳和生成Watermark
+// SourceFunction通过SourceContext的collectWithTimestamp()方法为数据元素分配时间戳，emitWatermark()方法向下游发送水印
 public void run(SourceContext<MyType> ctx) {
     while (/* condition */) {
-    +yType next = getNext();
-    +tx.collectWithTimestamp(next, next.getEventTimestamp());
-    +/ 生成Watermark并发送给下游
-    +f (next.hasWatermarkTime()) {
-    +   ctx.emitWatermark(new Watermark(next.getWatermarkTime()));
-    +
+        MyType next = getNext();
+        ctx.collectWithTimestamp(next, next.getEventTimestamp());
+        // 生成Watermark并发送给下游
+        if (next.hasWatermarkTime()) {
+           ctx.emitWatermark(new Watermark(next.getWatermarkTime()));
+        }
+    }
+}
+// 双流输入的StreamOperator Watermark处理
+// AbstractStreamOperator.java
+public void processWatermark1(Watermark mark) throws Exception {
+    input1Watermark = mark.getTimestamp();
+    long newMin = Math.min(input1Watermark, input2Watermark);
+    if (newMin > combinedWatermark) {
+        combinedWatermark = newMin;
+        processWatermark(new Watermark(combinedWatermark));
+    }
+}
+public void processWatermark2(Watermark mark) throws Exception {
+    input2Watermark = mark.getTimestamp();
+    long newMin = Math.min(input1Watermark, input2Watermark);
+    if (newMin > combinedWatermark) {
+        combinedWatermark = newMin;
+        p rocessWatermark(new Watermark(combinedWatermark));
     }
 }
 ```
 
-DataStream API中使用TimestampAssigner接口定义了时间戳的提取行为，包括AssignerWithPeriodicWatermarks和AssignerWithPunctuatedWatermarks，分别代表不同的Watermark生成策略。AssignerWithPeriodicWatermarks是周期性生成Watermark策略的顶层抽象接口，该接口的实现类周期性地生成Watermark，而不会针对每一个事件都生成。AssignerWithPunctuatedWatermarks对每一个事件都会尝试进行Watermark生成，但是如果生成的Watermark是null或Watermark小于之前的Watermark，则该Watermark不会发往下游^[发往下游也不会有任何效果，不会触发任何窗口的执行]。
-
 #### Flink SQL Watermark生成
+
+```
+语法：watermark for rowtimeColumnName as <watermark_strategy_expression>
+```
 
 Flink SQL Watermark主要是在TableSource中生成的，其定义了3类生成策略：
 + PeridocWatermarksAssigner：周期性（一定时间间隔或达到一定的记录条数）地产生一个Watermark
@@ -560,40 +604,23 @@ Flink SQL Watermark主要是在TableSource中生成的，其定义了3类生成�
 + PuntuatedWatermarkAssigner：数据流中每一个递增的EventTime都会产生一个Watermark^[实际生产中Punctuated方式在TPS很高的场景下会产生大量的Watermark，在一定程度上会对下游算子造成压力，所以只有在实时性要求非常高的场景下才会选择Punctuated的方式进行Watermark的生成]
 + PreserveWatermak：用于DataStream API和Table & SQL混合编程，此时，Flink SQL中不设定Watermark策略，使用底层DataStream中的Watermark策略也是可以的，这时Flink SQL的Table Source中不做处理
 
-#### 多流Watermark
-
-Flink内部实现每一个边上只能有一个递增的Watermark，每当出现多流携带EventTime汇聚到一起（GroupBy或Union）时，Flink会选择所有流入的EventTime中最小的一个向下游流出，从而保证Watermark的单调递增和数据的完整性。
-
-Watermark是在Source Function中生成或者在后续的DataStream API中生成的。Flink作业一般包含多个Task，每个Task运行一个或一组算子（OperatorChain）实例，Task在生成Watermark的时候是相互独立的，即在作业中存在多个并行的Watermark。Watermark在作业的DAG从上游向下游传递，算子收到上游Watermark后会更新其Watermark，如果新的Watermark大于算子的当前Watermark，则更新算子的Watermark为新Watermark，并发送给下游算子。
-
-对于有多个上游输入的算子（如Union、KeyBy、partition之后的算子），在Flink底层执行模型上，多流输入会被分解为多个双流输入，所以对于多流Watermark的处理也就是双流Watermark的处理。Flink会选择两条流中较小的Watermark，即`Min(input1Watermark, input2Watermark)`，与算子当前的Watermark比较，如果大于算子当前的Watermark，则更新算子的Watermark为新的Watermark，并发送给下游。
-
-```Java
-// 双流输入的StreamOperator Watermark处理
-// AbstractStreamOperator.java
-public void processWatermark1(Watermark mark) throws Exception {
-    input1Watermark = mark.getTimestamp();
-    long newMin = Math.min(input1Watermark, input2Watermark);
-    if (newMin > combinedWatermark) {
-    +ombinedWatermark = newMin;
-    +rocessWatermark(new Watermark(combinedWatermark));
-    }
-}
-public void processWatermark2(Watermark mark) throws Exception {
-    input2Watermark = mark.getTimestamp();
-    long newMin = Math.min(input1Watermark, input2Watermark);
-    if (newMin > combinedWatermark) {
-    +ombinedWatermark = newMin;
-    +rocessWatermark(new Watermark(combinedWatermark));
-    }
-}
-```
+WatermarkStrategy的返回值是Nullable(Bigint)或Nullable(Timestamp(3))，每个记录都会生成Watermark，但只有当生成的Watermark不为null, 且大于之前已经发出的最大Watermark时, 当前Watermark才会下发。Watermark发出的时间间隔由ExecutionConfig.getAutoWatermarkInterval()决定, 如果要实现Punctuated模式, 需要调用ExecutionConfig.setAutoWatermarkInterval(0)。Rowtime属性列也可以是一个计算字段。在DDL中定义的WatermarkStrategy会尽可能下推到Source算子
 
 ### 定时器
 
-定时器（实现为InternalTimer接口，InternalTimer实现类为InternalTimerImpl）是Flink提供的用于感知并利用处理时间/事件时间变化的机制。Timer是以Key级别注册的。
+定时器（Timer）是Flink提供的用于感知时间变化并进行处理的机制，本质上是通过ScheduledThreadPoolExecutor的`schedule()`实现的，定时器触发时会调用triggable的`onTimer()`方法。定时器实现为InternalTimer接口，包含四个要素：
++ key
++ namespace：命名空间，
++ timestamp：触发时间戳
++ timerHeapIndex：在优先队列中的下标
 
-定时器服务（实现为TimerService接口和InternalTimerService接口）用来获取当前事件时间（`currentWatermark()`）和处理时间（`currentProcessingTime()`）、注册或删除定时器，仅支持keyed operator，InternalTimerServiceImpl是基于Java堆实现的InternalTimerService，其中使用两个包含TimerHeapInternalTimer的优先队列（KeyGroupedInternalPriorityQueue）分别维护事件时间定时器和处理时间定时器，定时器的注册和删除都是通过优先队列添加或删除元素实现的。AbstractStreamOperator（所有流算子的基类）中的`getInternalTimerService()`方法（最终调用InternalTimeServiceManager（具体实现为InternalTimeServiceManagerImpl）中的getInternalTimerService()方法）用于获取InternalTimerService实例，一个算子可以有多个定时器服务实例，定时器服务由名称区分。
+定时器有以下四个特点：
++ 定时器只允许在按键值分区的数据流上注册
++ 对每个键值和时间戳只能注册一个定时器，重复注册的定时器仅最后一个生效
++ 检查点进行时定时器和其他状态一起写入检查点
++ 定时器是可以被删除的
+
+定时器服务（TimerService）用于管理定时器，定时器按触发时间排序保存在优先队列中。实现为TimerService接口和InternalTimerService接口，可以获取当前事件时间（`currentWatermark()`）和处理时间（`currentProcessingTime()`）、注册或删除定时器，仅支持keyed operator。InternalTimerServiceImpl是基于Java堆实现的InternalTimerService，其中使用两个包含TimerHeapInternalTimer的优先队列（KeyGroupedInternalPriorityQueue）分别维护事件时间定时器和处理时间定时器，定时器的注册和删除都是通过优先队列添加或删除元素实现的。AbstractStreamOperator（所有流算子的基类）中的`getInternalTimerService()`方法^[最终调用InternalTimeServiceManager（具体实现为InternalTimeServiceManagerImpl）中的getInternalTimerService()方法]用于获取InternalTimerService实例。一个算子可以有多个定时器服务实例，定时器服务由名称区分。
 
 InternalTimeServiceManager用于管理各个InternalTimeService，使用HashMap维护一个键下所有的定时器服务实例（键为定时器服务实例名称），如果使用同一个名称创建多次定时器服务实例，后续都返回第一次创建的实例。
 
@@ -726,6 +753,44 @@ abstract class AbstractStreamOperator<OUT> implements StreamOperator<OUT>, Setup
           */
 
         return keyedTimeServiceHandler.getInternalTimerService(name, keyedStateBackend.getKeySerializer(), namespaceSerializer, triggerable);
+    }
+}
+```
+
+**事件时间定时器触发** InternalTimeServiceManagerImpl的`advanceWatermark()`方法
+
+**处理时间定时器触发** ProcessingTimeService定义当前处理时间并执行所有相关操作，如注册定时器，具体实现是SystemProcessingTimeService。SystemProcessingTimeService使用System.currentTimeMillis()作为当前处理时间，使用调度线程池（ScheduledThreadPoolExecutor）注册定时器。
+
+```
+class SystemProcessingTimeService implements TimerService {
+    ScheduledThreadPoolExecutor timerService;     // 调度并触发任务的线程池
+
+    SystemProcessingTimeService(ExceptionHandler exceptionHandler, ThreadFactory threadFactory) {
+
+        this.exceptionHandler = checkNotNull(exceptionHandler);
+        this.status = new AtomicInteger(STATUS_ALIVE);
+        this.quiesceCompletedFuture = new CompletableFuture<>();
+
+        this.timerService = new ScheduledTaskExecutor(1);
+        // tasks should be removed if the future is canceled
+        this.timerService.setRemoveOnCancelPolicy(true);
+
+        // make sure shutdown removes all pending tasks
+        this.timerService.setContinueExistingPeriodicTasksAfterShutdownPolicy(false);
+        this.timerService.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+    }
+
+    public long getCurrentProcessingTime() {
+        return System.currentTimeMillis();
+    }
+
+    // 注册一个指定时间运行的任务
+    public ScheduledFuture<?> registerTimer(long timestamp, ProcessingTimeCallback callback) {
+
+        long delay = ProcessingTimeServiceUtil.getProcessingTimeDelay(
+                        timestamp, getCurrentProcessingTime());
+        return timerService.schedule(
+                    new ScheduledTask(status, exceptionHandler, callback, timestamp, 0), delay, TimeUnit.MILLISECONDS);
     }
 }
 ```

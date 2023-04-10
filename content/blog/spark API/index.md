@@ -5,11 +5,16 @@ description:
 tags: RDD, DataFrame, Dataset, Spark SQL, Structured API
 ---
 
+```toc
+ordered: true
+class-name: "table-of-contents"
+```
+
 ## RDD
 
-Spark的low-level API是指RDD、SparkContext和分布式共享变量（distributed shared variable，包括累加器和广播变量），SparkContext是low-level API的入口，通过SparkSession对象获取`SparkSession#sparkContext`。
+low-level API包括RDD、SparkContext和分布式共享变量（distributed shared variable，包括累加器和广播变量）^[SparkContext是low-level API的入口，可以通过SparkSession实例的`sparkContext`属性获取]。
 
-RDD（Resilient Distributed Datasets，弹性分布式数据集）是Spark的基础数据模型，用于表示所有内存中和磁盘中的分布式数据实体，Dataset或DataFrame程序都将被编译成RDD，Spark UI也使用RDD来描述作业执行（可以通过`RDD#setName(name: String)`方法设置RDD在Spark UI中的名称）。RDD只是一个逻辑概念，表示不可变的、分区的、可以被并行处理的记录集合，在内存中并不会真正地为某个RDD分配存储空间（除非被缓存），其数据只会在计算中产生。
+RDD（Resilient Distributed Dataset，弹性分布式数据集）是Spark的基础数据模型，用于表示所有内存中和磁盘中的分布式数据实体，Dataset或DataFrame程序都将被编译成RDD，Spark UI也使用RDD来描述作业执行（可以通过RDD的`setName(name)`方法设置RDD在Spark UI中的名称）。RDD只是一个逻辑概念，表示不可变的、分区的、可以被并行处理的记录集合，在内存中并不会真正地为某个RDD分配存储空间（除非被缓存），其数据只会在计算中产生。
 
 RDD具有5大特性：
 
@@ -92,7 +97,7 @@ Spark中的操作大致可以分为四类操作：
 + 控制操作（control operation）：进行RDD持久化，可以让RDD按不同的存储策略保存在磁盘或者内存中
 + 行动操作（action operation）：能够触发Spark运行的操作。Spark中行动操作分为两类，一类的操作结果变成Scala集合或者变量，另一类将RDD保存到外部文件系统或者数据库中
 
-### 创建操作
+#### 创建操作
 
 有三种方式创建RDD：从DataFrame、Dataset创建RDD、从Scala/Java集合创建RDD和从外部存储系统创建RDD。
 
@@ -168,32 +173,9 @@ barrier：`RDD#barrier()`（用于支持屏障调度）
 
 累加器是一种在多个转换中更新变量并将其传回driver节点的高效、容错的方式，可以用于debug、简单聚合。累加器仅动作执行时更新，Spark保证每个任务只会更新一次累加器。有名称的累加器才会在Spark UI中显示它们的值。使用累加器需要先在Driver中定义（`new XxxAccumulator`）并注册（`SparkContext#register(acc: Accumulator)`、`SparkContext#register(acc: Accumulator, name: String)`），然后在节点通过`Accumulator#add(v)`方法更新累加器，最后在driver节点通过`Accumulator#value`获取累加器的值。可以通过继承`AccumulatorV2`自定义累加器。
 
-### 开发
-
-#### 依赖
-
-```xml
-<!-- https://mvnrepository.com/artifact/org.apache.spark/spark-core -->
-<dependency>
-    <groupId>org.apache.spark</groupId>
-    <artifactId>spark-core_${scala_version}</artifactId>
-    <version>${spark_version}</version>
-</dependency>
-```
-
-如果需要访问HDFS集群则需要添加对应的hadoop-client依赖
-```xml
-<!-- https://mvnrepository.com/artifact/org.apache.hadoop/hadoop-client -->
-<dependency>
-    <groupId>org.apache.hadoop</groupId>
-    <artifactId>hadoop-client</artifactId>
-    <version>${hadoop_version}</version>
-</dependency>
-```
-
 ## Structured API
 
-Structured API包含三种核心类型API：DataFrame、Dataset、SQL。对于Scala，DataFrames就是Dataset\[Row]，Row is Spark's internal representation of its optimized in-memory format for computation。Row表示一条记录，DataFrame中每条记录都是Row类型的，可以从SQL、RDD、数据源或代码生成Row。
+Structured API包含三种核心类型API：DataFrame、Dataset、SQL。对于Scala，DataFrames就是`Dataset[Row]`，Row表示一条记录，DataFrame中每条记录都是Row类型的，可以从SQL、RDD、数据源或代码生成Row。
 
 Structured API（DataFrame/Dataset/SQL Code）执行过程：
 1. 生成逻辑计划（Logical Planning）：将用户代码转换成逻辑计划（logical plan），逻辑计划仅表示一组抽象的转换，不涉及executor或driver，仅仅是将用户表达式转换成最优的版本。首先将用户代码转换成未解析的逻辑计划（unresolved logical plan，未解析是指引用的表或列可能不存在），然后在分析器（analyzer）中使用catalog（存储着所有表和DataFrame信息）解析（resolve）列和表。如果catalog中不包含需要的表或列，分析器将拒绝未解析的逻辑计划。解析成功后结果会传给Catalyst优化器（一组尝试通过谓词下推、投影优化逻辑计划的规则，可以通过继承Catalyst来增加领域特定优化规则）生成优化的逻辑计划
