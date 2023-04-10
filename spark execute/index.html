@@ -102,7 +102,7 @@
 </ol>
 </li>
 <li>
-<p><a href="#join">join</a></p>
+<p><a href="#spark-join">Spark Join</a></p>
 <ol>
 <li><a href="#aqe">AQE</a></li>
 </ol>
@@ -977,7 +977,9 @@
 </ul>
 <p>表达式一般指的是不需要触发执行引擎就能够直接进行计算的单元（四则运算、逻辑操作、转换操作、过滤操作等），Expression是Catalyst中的表达式体系，算子执行前通常都会进行绑定操作，将表达式与输入的属性对应起来，同时算子也能够调用各种表达式处理相应的逻辑。Expression类中定义了5个方面的操作，包括基本属性、核心操作、输入输出、字符串表示和等价性判断。核心操作中的<code class="language-text">eval</code>函数实现了表达式对应的处理逻辑，<code class="language-text">genCode</code>和<code class="language-text">doGenCode</code>用于生成表达式对应的Java代码，字符串表示用于查看该Expression的具体内容。</p>
 <h3 id="spark-sql解析" style="position:relative;"><a href="#spark-sql%E8%A7%A3%E6%9E%90" aria-label="spark sql解析 permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Spark SQL解析</h3>
+<div class="wrapper" markdown="block">
 <p><img src="https://www.plantuml.com/plantuml/svg/XP9BRuCm48Jl_XNkhJq0TvH3ahQ7I3r4IjIxCPjWnJookoYXJVzxJLwuG5ia99lvXXalJ8aLSfrRyM0ARUiKPCPSKHn5g0xXrd1M9pK1wh9WA3ZKPHubfBE3me-eSiQ0CyY1ebmH0qRN7Us0TTO4PStM5E2HGKyAMqbanYL3Nd4ZSyWJG1B2k4JSA0rogP1WSTz-2kckgdsujAfufBrTmv5ZkM8qnVOfbc_brcXbPIjtyEknGY0ovPYb4pl3MYKM5gaxjzaOm15NZn1VGgY469LcgQqYahFhThMtvsEWN_z5iLet5Ooy-IQTOJVRUMri2XZBsNtTfbr2dXri6ng4_ETRkHQxlqmtODIyjtD5qDxlXWoNU1Ky-6UC9uZUDvsSmd0uAp6StkGK1BtUlr63gGWnx7n1lMRTycUMNzvdWf7QGq_BzLgBAHIf-_c_0G00" alt="plantuml"></p>
+</div>
 <p>Catalyst中提供了直接面向用户的ParseInterface接口，该接口中包含了对SQL语句、Expression和TableIdentifier（数据表标识符）的解析方法，AbstractSqlParser是实现了ParseInterface的虚类，其中定义了返回AstBuilder的方法。CatalystSqlParser仅用于Catalyst内部，而SparkSqlParser用于外部调用。</p>
 <p>AstBuilder继承了ANTLR 4生成的默认SqlBaseBaseVisitor，用于生成SQL对应的抽象语法树AST（Unresolved LogicalPlan）。SparkSqlAstBuilder继承AstBuilder，并在其基础上定义了一些DDL语句的访问操作，主要在SparkSqlParser中调用。</p>
 <p>QuerySpecificationContext为根节点所代表的子树中包含了对数据的查询，其子节点包括NamedExpressionSqlContext、FromClauseContext、BooleanDefaultContext、AggregationContext等，NamedExpressionSqlContext为根节点的系列节点代表select表达式中选择的列，FromClauseContext节点为根节点的系列节点对应数据表，BooleanDefaultContext为根节点的系列节点代表where条件中的表达式，AggregationContext为根节点的系列节点代表聚合操作（group by、cube、grouping sets和roll up）的字段。</p>
@@ -1088,171 +1090,584 @@
         curPlan
     <span class="token punctuation">}</span>
 <span class="token punctuation">}</span></code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre></div>
-<p>Analyzer继承自ruleExecutor类，执行过程会调用其父类RuleExecutor中实现的execute方法，Analyzer中重新定义了一系列规则，即RuleExecutor类中的成员变量batches。Analyzer默认定义了6个Batch，共有34条内置的规则外加额外实现的扩展规则：</p>
-<ul>
-<li>Batch Substitution：对节点进行替换操作，包含4条规则
-<ul>
-<li>CTESubstitution：用来处理with语句<sup id="fnref-27"><a href="#fn-27" class="footnote-ref">27</a></sup>，在遍历逻辑算子树的过程中，当匹配到<code class="language-text">with(child, relation)</code>节点时，将子LogicalPlan替换成解析后的CTE。由于CTE的存在，SparkSqlParser对SQL语句从左向右解析后会产生多个LogicalPlan，这条规则的作用是将多个LogicalPlan合并成一个LogicalPlan</li>
-<li>WindowsSubstitution：对当前的逻辑算子树进行查找，当匹配到<code class="language-text">WithWindowDefinition(windowDefinitions, child)</code>表达式时，将其子节点中未解析的窗口表达式（Unresolved-WindowExpression）转换成窗口函数表达式（WindowExpression）</li>
-<li>EliminateUnions：在遍历逻辑算子树过程中，匹配到<code class="language-text">Union(children)</code>且children的数目只有1个时，将<code class="language-text">Union(children)</code>替换为<code class="language-text">children.head</code>节点</li>
-<li>SubstituteUnresolvedOrdinals：根据<code class="language-text">spark.sql.orderByOridinal</code>和<code class="language-text">spark.sql.groupByOrdinal</code>这两个配置参数将下标替换成UnresolvedOriginal表达式，以映射到对应的列</li>
-</ul>
-</li>
-<li>Batch Resolution：包含25条分析规则以及一个extendedresolutionRules扩展规则列表用来支持Analyzer子类在扩展规则列表中添加新的分析规则
-<ul>
-<li>ResolveTableValuedFunctions：解析可以作为数据表的函数</li>
-<li>ResolveRelations：解析数据表，当遍历逻辑算子树的过程中匹配到UnresolvedRelation节点时，调用<code class="language-text">lookupTableFromCatalog</code>方法从SessionCatalog中查表，在Catalog查表后，Relation节点上会插入一个别名节点</li>
-<li>ResolveRederrences：解析列，当遍历逻辑算子树的过程中匹配到UnresolvedAttribute时，会调用LogicalPlan中定义的resolveChildren方法对该表达式进行分析。resolveChildren并不能确保一次分析成功，在分析对应表达式时，需要根据该表达式所处LogicalPlan节点的子节点输出信息进行判断，如果存在处于unresolved状态的子节点，解析操作无法成功，留待下一轮规则调用时再进行解析</li>
-<li>ResolveCreateNamedStruct：解析结构体创建</li>
-<li>ResolveDeserializer：解析反序列化操作类</li>
-<li>ResolveNewInstance：解析新的实例</li>
-<li>ResolveUpCast：解析类型转换</li>
-<li>ResolveGroupingAnalytics：解析多维分析</li>
-<li>ResolvePivot：解析Pivot</li>
-<li>ResolveOrdinalInOrderByAndGroupBy：解析下标聚合</li>
-<li>ResolveMissingReferences：解析新的列</li>
-<li>ExtractGenerator：解析生成器</li>
-<li>ResolveGenerate：解析生成过程</li>
-<li>ResolveFunctions：解析函数</li>
-<li>ResolveAliases：解析别名</li>
-<li>ResolveSubquery：解析子查询</li>
-<li>ResolveWindowOrder：解析窗口函数排序</li>
-<li>ResolveWindowFrame：解析窗口函数</li>
-<li>ResolveNaturalAndUsingJoin：解析自然join</li>
-<li>ExtractWindowExpressions：提取窗口函数表达式</li>
-<li>GlobalAggregates：解析全局聚合</li>
-<li>ResolveAggregateFunctions：解析聚合函数</li>
-<li>TimeWindowing：解析时间窗口</li>
-<li>ResolveInlineTables：解析内联表</li>
-<li>TypeCoercion.typeCoercionRules：解析强制类型转换。
-<ul>
-<li>ImplicitTypeCasts规则对逻辑算子树中的BinaryOperator表达式调用<code class="language-text">findTightestCommonTypeOfTwo</code>找到对于左右表达式节点来讲最佳的共同数据类型</li>
-</ul>
-</li>
-<li>extendedResolutionRules：扩展规则</li>
-</ul>
-</li>
-<li>Batch Nondeterministic：仅包含PullOutNondeterministic一条规则，用来将LogicalPlan中非Project或非Filter算子的nondeterministic（不确定的）表达式提取出来，然后将这些表达式放在内层的Project算子中或最终的Project算子中</li>
-<li>Batch UDF：主要用来对用户自定义函数进行一些特别的处理，仅有HandleNullInputForUDF一条规则。HandleNullInputForUDF用来处理输入数据为Null的情形，主要思想是从上至下进行表达式的遍历，当匹配到ScalaUDF类型的表达式时，会创建If表达式来进行Null值的检查</li>
-<li>Batch FixNullability：仅包含FixNullability一条规则，用来统一设定LogicaPlan中表达式的nullable属性。在DataFrame或Dataset等编程接口中，用户代码对于某些列可能会改变其nullability属性，导致后续的判断逻辑中出现异常结果，在FixNullability规则中，对解析后的LogicalPlan执行transformExpressions操作，如果某列来自于其子节点，则其nullability值根据子节点对应的输出信息进行设置</li>
-<li>Batch Cleanup：仅包含CleanupAliases一条规则，用来删除LogicalPlan中无用的别名信息。一般情况下，逻辑算子树中仅Project、Aggregate或Window算子的最高一层表达式才需要别名，CleanupAliases通过trimAliases方法对表达式执行中的别名进行删除</li>
-</ul>
+<p>Analyzer继承自ruleExecutor类，执行过程会调用其父类RuleExecutor中实现的execute方法，Analyzer中重新定义了一系列规则，即RuleExecutor类中的成员变量batches。Analyzer默认定义了6个Batch，共有34条内置的规则外加额外实现的扩展规则。</p>
+<div class="wrapper" markdown="block">
+<table>
+<thead>
+<tr>
+<th>组</th>
+<th>组描述</th>
+<th>规则</th>
+<th>规则描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Batch Substitution</td>
+<td>对节点进行替换操作</td>
+<td>CTESubstitution</td>
+<td>用来处理with语句<sup id="fnref-27"><a href="#fn-27" class="footnote-ref">27</a></sup>，在遍历逻辑算子树的过程中，当匹配到with(child, relation)节点时，将子LogicalPlan替换成解析后的CTE。<br>由于CTE的存在，SparkSqlParser对SQL语句从左向右解析后会产生多个LogicalPlan，这条规则的作用是将多个LogicalPlan合并成一个LogicalPlan</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>WindowsSubstitution</td>
+<td>对当前的逻辑算子树进行查找，当匹配到WithWindowDefinition(windowDefinitions, child)表达式时，<br>将其子节点中未解析的窗口表达式（Unresolved-WindowExpression）转换成窗口函数表达式（WindowExpression）</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>EliminateUnions</td>
+<td>在遍历逻辑算子树过程中，匹配到Union(children)且children的数目只有1个时，将Union(children)替换为children.head节点</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>SubstituteUnresolvedOrdinals</td>
+<td>根据配置项spark.sql.orderByOridinal和spark.sql.groupByOrdinal将下标替换成UnresolvedOriginal表达式，以映射到对应的列</td>
+</tr>
+<tr>
+<td>Batch Resolution</td>
+<td>解析</td>
+<td>ResolveTableValuedFunctions</td>
+<td>解析可以作为数据表的函数</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveRelations</td>
+<td>解析数据表，当遍历逻辑算子树的过程中匹配到UnresolvedRelation节点时，调用lookupTableFromCatalog方法从SessionCatalog中查表，<br>在Catalog查表后，Relation节点上会插入一个别名节点</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveRederrences</td>
+<td>解析列，当遍历逻辑算子树的过程中匹配到UnresolvedAttribute时，会调用LogicalPlan中定义的resolveChildren方法对该表达式进行分析。<br>resolveChildren并不能确保一次分析成功，在分析对应表达式时，需要根据该表达式所处LogicalPlan节点的子节点输出信息进行判断，<br>如果存在处于unresolved状态的子节点，解析操作无法成功，留待下一轮规则调用时再进行解析</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveCreateNamedStruct</td>
+<td>解析结构体创建</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveDeserializer</td>
+<td>解析反序列化操作类</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveNewInstance</td>
+<td>解析新的实例</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveUpCast</td>
+<td>解析类型转换</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveGroupingAnalytics</td>
+<td>解析多维分析</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolvePivot</td>
+<td>解析Pivot</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveOrdinalInOrderByAndGroupBy</td>
+<td>解析下标聚合</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveMissingReferences</td>
+<td>解析新的列</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ExtractGenerator</td>
+<td>解析生成器</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveGenerate</td>
+<td>解析生成过程</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveFunctions</td>
+<td>解析函数</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveAliases</td>
+<td>解析别名</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveSubquery</td>
+<td>解析子查询</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveWindowOrder</td>
+<td>解析窗口函数排序</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveWindowFrame</td>
+<td>解析窗口函数</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveNaturalAndUsingJoin</td>
+<td>解析自然join</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ExtractWindowExpressions</td>
+<td>提取窗口函数表达式</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>GlobalAggregates</td>
+<td>解析全局聚合</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveAggregateFunctions</td>
+<td>解析聚合函数</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>TimeWindowing</td>
+<td>解析时间窗口</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ResolveInlineTables</td>
+<td>解析内联表</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>TypeCoercion.typeCoercionRules</td>
+<td>解析强制类型转换<br>ImplicitTypeCasts规则对逻辑算子树中的BinaryOperator表达式调用findTightestCommonTypeOfTwo找到对于左右表达式节点来讲最佳的共同数据类型</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>extendedResolutionRules</td>
+<td>扩展规则，用来支持Analyzer子类在扩展规则列表中添加新的分析规则</td>
+</tr>
+<tr>
+<td>Batch Nondeterministic</td>
+<td></td>
+<td>PullOutNondeterministic</td>
+<td>用来将LogicalPlan中非Project或非Filter算子的nondeterministic（不确定的）表达式提取出来，<br>然后将这些表达式放在内层的Project算子中或最终的Project算子中</td>
+</tr>
+<tr>
+<td>Batch UDF</td>
+<td>对用户自定义函数进行一些特别的处理</td>
+<td>HandleNullInputForUDF</td>
+<td>用来处理输入数据为Null的情形，主要思想是从上至下进行表达式的遍历，<br>当匹配到ScalaUDF类型的表达式时，会创建If表达式来进行Null值的检查</td>
+</tr>
+<tr>
+<td>Batch FixNullability</td>
+<td></td>
+<td>FixNullability</td>
+<td>用来统一设定LogicaPlan中表达式的nullable属性。在DataFrame或Dataset等编程接口中，<br>用户代码对于某些列可能会改变其nullability属性，导致后续的判断逻辑中出现异常结果，<br>在FixNullability规则中，对解析后的LogicalPlan执行transformExpressions操作，<br>如果某列来自于其子节点，则其nullability值根据子节点对应的输出信息进行设置</td>
+</tr>
+<tr>
+<td>Batch Cleanup</td>
+<td></td>
+<td>CleanupAliases</td>
+<td>用来删除LogicalPlan中无用的别名信息。一般情况下，逻辑算子树中仅Project、Aggregate或Window算子的最高一层表达式才需要别名，<br>CleanupAliases通过trimAliases方法对表达式执行中的别名进行删除</td>
+</tr>
+</tbody>
+</table>
+</div>
 <p>Unresolved LogicalPlan的解析是一个不断的迭代过程，用户可以通过参数（spark.sql.optimizer.maxIterations）设定RuleExecutor迭代的轮数，默认配置为50轮，对于某些嵌套较深的特殊SQL，可以适当地增加轮数。</p>
 <p>QueryExecution类中触发Analyzer执行的是execute方法，即RuleExecutor中的execute方法，该方法会循环地调用规则对逻辑算子树进行分析。</p>
 <h4 id="optimized-logicalplan生成" style="position:relative;"><a href="#optimized-logicalplan%E7%94%9F%E6%88%90" aria-label="optimized logicalplan生成 permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Optimized LogicalPlan生成</h4>
 <p>Optimizer继承自RuleExecutor类，执行过程是调用父类RuleExecutor中实现的executor方法，Optimizer中重新定义了一系列规则，即RuleExecutor类中的成员变量batches。在QueryExecution中，Optimizer会对传入的Analyzed LogicalPlan执行execute方法，启动优化过程。</p>
 <div class="gatsby-highlight" data-language="scala"><pre style="counter-reset: linenumber NaN" class="language-scala line-numbers"><code class="language-scala"><span class="token keyword">val</span> optimizedPlan<span class="token operator">:</span> LogicalPlan <span class="token operator">=</span> optimizer<span class="token punctuation">.</span>execute<span class="token punctuation">(</span>analyzed<span class="token punctuation">)</span></code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span></span></pre></div>
 <p>SparkOptimizer继承自Optimizer，实现了16个Batch（Optimizer自身定义了12个规则Batch，SparkOptimizer类又添加了4个Batch）：</p>
-<ol>
-<li>Batch Finish Analysis：包含5条规则，都只执行一次
-<ul>
-<li>EliminateSubqueryAliases：消除子查询别名，直接将SubqueryAlias节点替换为其子节点<sup id="fnref-28"><a href="#fn-28" class="footnote-ref">28</a></sup></li>
-<li>ReplaceExpressions：表达式替换，在逻辑算子树中查找匹配RuntimeReplaceable的表达式并将其替换为能够执行的正常表达式，通常用来对其他类型的数据库提供兼容能力，如用<code class="language-text">coalesce</code>替换<code class="language-text">nvl</code>表达式</li>
-<li>ComputeCurrentTime：计算与当前时间相关的表达式，在同一条SQL语句中可能包含多个计算时间的表达式，即CurrentDate和CurrentTimestamp，且该表达式出现在多个语句中，未避免不一致，ComputeCurrentTime对逻辑算子树中的时间函数计算一次后，将其他同样的函数替换成该计算结果</li>
-<li>GetCurrentDatabase：执行CurrentDatabase并得到结果，然后用此结果替换所有CurrentDatabase表达式</li>
-<li>RewriteDistinctAggregates：重写Distinct聚合操作，将包含Distinct算子的聚合语句转换为两个常规的聚合表达式</li>
-</ul>
-</li>
-<li>Batch Union：针对Union操作的规则Batch
-<ul>
-<li>CombineUnions：在逻辑算子树中当相邻的节点都是Union算子时，将这些相邻的Union节点合并为一个Union节点</li>
-</ul>
-</li>
-<li>Batch Subquery
-<ul>
-<li>OptimizeSubqueries：当SQL语句包含子查询时，会在逻辑算子树上生成SubqueryExpression表达式，OptimizeSubqueries优化规则在遇到SubqueryExpression表达式时，进一步递归调用Optimizer对该表达式的子计划并进行优化</li>
-</ul>
-</li>
-<li>Batch Replace Operators：主要用来执行算子的替换操作。在SQL语句中，某些查询算子可以直接改写为已有的算子
-<ul>
-<li>ReplaceIntersectWithSemiJoin：将Intersect操作算子替换为Left-Semi Join操作算子，仅适用于INTERSECT DISTINCT类型的语句，而不适用于INTERSECT ALL语句，该优化规则执行前必须消除重复的属性，避免生成的Join条件不正确</li>
-<li>ReplaceExceptWithAntiJoin：将Except操作算子替换为Left-Anti Join操作算子，仅适用于EXCEPT DISTINCT类型的语句，而不适用于EXCEPT ALL语句，该优化规则执行之前必须消除重复的属性，避免生成的Join条件不正确</li>
-<li>ReplaceDistinctWithAggregate：将Distinct算子转换为Aggregate语句，将SQL语句中直接进行Distinct操作的Select语句替换为对应的Group By语句</li>
-</ul>
-</li>
-<li>Batch Aggregate：主要用来处理聚合算子中的逻辑
-<ul>
-<li>RemoveLiteralFromGroupExpressions：用来删除Group By语句中的常数。如果Group By语句中全部是常数，则会将其替换为一个简单的常数0表达式</li>
-<li>RemoveRepetitionFromGroupExpressions：将重复的表达式从Group By语句中删除</li>
-</ul>
-</li>
-<li>Batch Operator Optimizations：包含的优化规则可以分为3个模块，算子下推（Operator Push Down）、算子组合（Operator Combine）、常量折叠与长度消减（Constant Folding and Strength Reduction）
-<ul>
-<li>算子下推：主要是将逻辑算子树中上层的算子节点尽量下推，使其靠近叶子节点，能够在不同程度上减少后续处理的数据量甚至简化后续的处理逻辑
-<ul>
-<li>PushProjectionThroughUnion：列剪裁下推</li>
-<li>ReorderJoin：Join顺序优化</li>
-<li>EliminateOuterJoin：OuterJoin消除</li>
-<li>PushPredicateThroughJoin：谓词下推到Join算子</li>
-<li>PushDownPredicate：谓词下推</li>
-<li>LimitPushDown：Limit算子下推，将LocalLimit算子下推到Union All和Outer Join操作算子的下方，减少这两种算子在实际计算过程中需要处理的数据量</li>
-<li>ColumnPruning：列剪裁</li>
-<li>InferFiltersFromConstraints：约束条件提取</li>
-</ul>
-</li>
-<li>算子组合：将逻辑算子树中能够进行组合的算子尽量整合在一起，避免多次计算，以提高性能，主要针对的是重分区（repartition）算子、投影（Project）算子、过滤（Filter）算子、Window算子、Limit算子和Union算子
-<ul>
-<li>CollapseRepartition：重分区组合</li>
-<li>CollapseProject：投影算子组合</li>
-<li>CollapseWindow：Window组合</li>
-<li>CollapseFilters：过滤条件组合</li>
-<li>CollapseLimits：Limit操作组合</li>
-<li>CollapseUnions：Union算子组合</li>
-</ul>
-</li>
-<li>常量折叠与长度消减：对于逻辑算子树中涉及某些常量的节点，可以在实际执行之前就完成静态处理
-<ul>
-<li>NullPropagation：Null提取</li>
-<li>FoldablePropagation：可折叠算子提取</li>
-<li>OptimizeIn：In操作优化</li>
-<li>ConstantFolding：常数折叠，对于能够可折叠（foldable）的表达式会直接在EmptyRow上执行evaluate操作，从而构造新的Literal表达式</li>
-<li>ReorderAssociativeOperator：重排序关联算子优化</li>
-<li>LikeSimplification：Like算子简化</li>
-<li>BooleanSimplification：Boolean算子简化</li>
-<li>SimplifyConditionals：条件简化</li>
-<li>RemoveDispensableExpressions：Dispensable表达式消除</li>
-<li>SimplifyBinaryComparison：比较算子优化</li>
-<li>PruneFilters：过滤条件裁剪，会详细的分析过滤条件，对总是能够返回true或false的过滤条件进行特别的处理</li>
-<li>EliminateSorts：排序算子消除</li>
-<li>SimplifyCasts：Cast算子简化</li>
-<li>SimplifyCaseConversionExpressions:case表达式简化</li>
-<li>RewriteCorrelatedScalarSubquery：依赖子查询重写</li>
-<li>EliminateSerialization：序列化消除</li>
-<li>RemoveAliasOnlyProject消除别名</li>
-</ul>
-</li>
-</ul>
-</li>
-<li>Batch Check Cartesian Products：只有CheckCartesianProducts这一条优化规则，用来检测逻辑算子树中是否存在笛卡尔积类型的Join操作。必须在ReorderJoin规则执行之后才能执行，确保所有的Join条件收集完毕，当spark.sql.crossJoin.enabled参数设置为true时，该规则会被忽略</li>
-<li>Batch Decimal Optimizations：只有DicimalAggregates这一条优化规则，用于处理聚合操作中与Decimal类型相关的问题。如果聚合查询中涉及浮点数的精度处理，性能就会受到很大的影响，对于固定精度的Decimal类型，DecimalAggregates规则将其当作unscaled Long类型来执行，这样可以加速聚合操作的速度</li>
-<li>Batch Typed Filter Optimization：仅包含CombineTypedFilters这一条优化规则，用来对特定情况下的过滤条件进行合并，当逻辑算子树中存在两个TypedFilter过滤条件且针对同类型的对象条件时，CombineTypedFilters优化规则会将它们合并到同一个过滤函数中</li>
-<li>Batch LocalRelation：主要用来优化与LocalRelation相关的逻辑算子树
-<ul>
-<li>ConvertToLocalRelation：将LocalRelation上的本地操作转换为另一个LocalRelation，当前仅处理Project投影操作</li>
-<li>PropagateEmptyRelation：将包含空的LocalRelation进行中折叠</li>
-</ul>
-</li>
-<li>Batch OptimizeCodegen：仅包含OptimizeCodegen一条优化规则，用来对生成的代码进行优化，主要针对的是case when语句，当case when语句中的分支数目不超过配置中的最大数据时，该表达式才能执行代码生成</li>
-<li>Batch RewriteSubquery：主要用来优化子查询
-<ul>
-<li>RewritePredicateSubquery：将特定的子查询谓词逻辑转换为left-semi/anti join操作，其中EXISTS和NOT EXISTS算子分别对应semi和anti类型的join，过滤条件会被当作Join的条件，IN和NOT IN也分别对应semi和anti类型的Join，过滤条件和选择的列都会被当作join的条件</li>
-<li>CollapseProject：会将两个相邻的Project算子组合在一起并执行别名替换，整合成一个统一的表达式</li>
-</ul>
-</li>
-<li>Batch Optimize Metadata Only Query：只有OptimizeMetadataOnlyQuery这一条规则，用来优化执行过程中只需查找分区级别元数据的语句，适用于扫描的所有列都是分区列且包含聚合算子的情形，并且聚合算子需要满足以下情况之一：聚合表达式是分区列；分区列的聚合函数有DISTINCT算子；分区列的聚合函数中是否有DISTINCT算子不影响结果</li>
-<li>Batch Extract Python UDF from Aggregate：该Batch仅执行一次，只包含ExtractPythonUDFFromAggregate这一条规则，用来提取出聚合操作中的Python UDF函数。主要针对采用PySpark提交查询的情形，将参与聚合的Python自定义函数提取出来，在聚合操作完成之后执行</li>
-<li>Batch Prune File Source Table Partitions：该Batch仅执行一次，只包含PruneFileSourcePartitions这一条规则，用来对数据文件中的分区进行裁剪操作，当数据文件中定义了分区信息且逻辑算子树中的LogicalRelation节点上方存在过滤算子时，PruneFileSourcePartitions优化规则会尽可能地将过滤算子下推到存储层，这样可以避免读入无关的数据分区</li>
-<li>Batch User Provided Optimizers：用于支持用户自定义的优化规则，ExperimentalMethods的extraOptimizations队列默认为空，用户只需要继承Rule<code class="language-text">[LogicalPlan]</code>虚类，实现相应的转化逻辑就可以注册到优化规则队列中应用执行</li>
-</ol>
+<div class="wrapper" markdown="block">
+<table>
+<thead>
+<tr>
+<th>组</th>
+<th>组描述</th>
+<th>规则</th>
+<th>规则描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Batch Finish Analysis</td>
+<td></td>
+<td>EliminateSubqueryAliases</td>
+<td>消除子查询别名，直接将SubqueryAlias节点替换为其子节点<sup id="fnref-33"><a href="#fn-33" class="footnote-ref">33</a></sup></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ReplaceExpressions</td>
+<td>表达式替换，在逻辑算子树中查找匹配RuntimeReplaceable的表达式并将其替换为能够执行的正常表达式，<br>通常用来对其他类型的数据库提供兼容能力，如用coalesce替换nvl表达式</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ComputeCurrentTime</td>
+<td>计算与当前时间相关的表达式，在同一条SQL语句中可能包含多个计算时间的表达式，即CurrentDate和CurrentTimestamp，<br>且该表达式出现在多个语句中，未避免不一致，ComputeCurrentTime对逻辑算子树中的时间函数计算一次后，将其他同样的函数替换成该计算结果</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>GetCurrentDatabase</td>
+<td>执行CurrentDatabase并得到结果，然后用此结果替换所有CurrentDatabase表达式</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>RewriteDistinctAggregates</td>
+<td>重写Distinct聚合操作，将包含Distinct算子的聚合语句转换为两个常规的聚合表达式</td>
+</tr>
+<tr>
+<td>Batch Union</td>
+<td>针对Union操作的规则</td>
+<td>CombineUnions</td>
+<td>在逻辑算子树中当相邻的节点都是Union算子时，将这些相邻的Union节点合并为一个Union节点</td>
+</tr>
+<tr>
+<td>Batch Subquery</td>
+<td></td>
+<td>OptimizeSubqueries</td>
+<td>当SQL语句包含子查询时，会在逻辑算子树上生成SubqueryExpression表达式，<br>OptimizeSubqueries优化规则在遇到SubqueryExpression表达式时，进一步递归调用Optimizer对该表达式的子计划并进行优化</td>
+</tr>
+<tr>
+<td>Batch Replace Operators</td>
+<td>主要用来执行算子的替换操作<sup id="fnref-32"><a href="#fn-32" class="footnote-ref">32</a></sup></td>
+<td>ReplaceIntersectWithSemiJoin</td>
+<td>将Intersect操作算子替换为Left-Semi Join操作算子，仅适用于INTERSECT DISTINCT类型的语句，<br>而不适用于INTERSECT ALL语句，该优化规则执行前必须消除重复的属性，避免生成的Join条件不正确</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ReplaceExceptWithAntiJoin</td>
+<td>将Except操作算子替换为Left-Anti Join操作算子，仅适用于EXCEPT DISTINCT类型的语句，而不适用于EXCEPT ALL语句，<br>该优化规则执行之前必须消除重复的属性，避免生成的Join条件不正确</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ReplaceDistinctWithAggregate</td>
+<td>将Distinct算子转换为Aggregate语句，将SQL语句中直接进行Distinct操作的Select语句替换为对应的Group By语句</td>
+</tr>
+<tr>
+<td>Batch Aggregate</td>
+<td>处理聚合算子中的逻辑</td>
+<td>RemoveLiteralFromGroupExpressions</td>
+<td>用来删除Group By语句中的常数。如果Group By语句中全部是常数，则会将其替换为一个简单的常数0表达式</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>RemoveRepetitionFromGroupExpressions</td>
+<td>将重复的表达式从Group By语句中删除</td>
+</tr>
+<tr>
+<td>Batch Operator Optimizations</td>
+<td>算子下推（Operator Push Down）<sup id="fnref-31"><a href="#fn-31" class="footnote-ref">31</a></sup></td>
+<td>PushProjectionThroughUnion</td>
+<td>列剪裁下推</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ReorderJoin</td>
+<td>Join顺序优化</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>EliminateOuterJoin</td>
+<td>OuterJoin消除</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>PushPredicateThroughJoin</td>
+<td>谓词下推到Join算子</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>PushDownPredicate</td>
+<td>谓词下推</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>LimitPushDown</td>
+<td>Limit算子下推，将LocalLimit算子下推到Union All和Outer Join操作算子的下方，减少这两种算子在实际计算过程中需要处理的数据量</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ColumnPruning</td>
+<td>列剪裁</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>InferFiltersFromConstraints</td>
+<td>约束条件提取</td>
+</tr>
+<tr>
+<td></td>
+<td>算子组合（Operator Combine）<sup id="fnref-30"><a href="#fn-30" class="footnote-ref">30</a></sup></td>
+<td>CollapseRepartition</td>
+<td>重分区组合</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>CollapseProject</td>
+<td>投影算子组合</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>CollapseWindow</td>
+<td>Window组合</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>CollapseFilters</td>
+<td>过滤条件组合</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>CollapseLimits</td>
+<td>Limit操作组合</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>CollapseUnions</td>
+<td>Union算子组合</td>
+</tr>
+<tr>
+<td></td>
+<td>常量折叠与长度消减<br>（Constant Folding and <br>Strength Reduction）<sup id="fnref-29"><a href="#fn-29" class="footnote-ref">29</a></sup></td>
+<td>NullPropagation</td>
+<td>Null提取</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>FoldablePropagation</td>
+<td>可折叠算子提取</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>OptimizeIn</td>
+<td>In操作优化</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ConstantFolding</td>
+<td>常数折叠，对于能够可折叠（foldable）的表达式会直接在EmptyRow上执行evaluate操作，从而构造新的Literal表达式</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ReorderAssociativeOperator</td>
+<td>重排序关联算子优化</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>LikeSimplification</td>
+<td>Like算子简化</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>BooleanSimplification</td>
+<td>Boolean算子简化</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>SimplifyConditionals</td>
+<td>条件简化</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>RemoveDispensableExpressions</td>
+<td>Dispensable表达式消除</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>SimplifyBinaryComparison</td>
+<td>比较算子优化</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>PruneFilters</td>
+<td>过滤条件裁剪，会详细的分析过滤条件，对总是能够返回true或false的过滤条件进行特别的处理</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>EliminateSorts</td>
+<td>排序算子消除</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>SimplifyCasts</td>
+<td>Cast算子简化</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>SimplifyCaseConversionExpressions</td>
+<td>case表达式简化</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>RewriteCorrelatedScalarSubquery</td>
+<td>依赖子查询重写</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>EliminateSerialization</td>
+<td>序列化消除</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>RemoveAliasOnlyProject</td>
+<td>消除别名</td>
+</tr>
+<tr>
+<td>Batch Check Cartesian Products</td>
+<td></td>
+<td>CheckCartesianProducts</td>
+<td>检测逻辑算子树中是否存在笛卡尔积类型的Join操作。必须在ReorderJoin规则执行之后才能执行，<br>确保所有的Join条件收集完毕，当配置项spark.sql.crossJoin.enabled为true时，该规则会被忽略</td>
+</tr>
+<tr>
+<td>Batch Decimal Optimizations</td>
+<td></td>
+<td>DicimalAggregates</td>
+<td>处理聚合操作中与Decimal类型相关的问题。如果聚合查询中涉及浮点数的精度处理，<br>性能就会受到很大的影响，对于固定精度的Decimal类型，DecimalAggregates规则将其当作unscaled Long类型来执行，这样可以加速聚合操作的速度</td>
+</tr>
+<tr>
+<td>Batch Typed Filter Optimization</td>
+<td></td>
+<td>CombineTypedFilters</td>
+<td>对特定情况下的过滤条件进行合并，当逻辑算子树中存在两个TypedFilter过滤条件且针对同类型的对象条件时，<br>CombineTypedFilters优化规则会将它们合并到同一个过滤函数中</td>
+</tr>
+<tr>
+<td>Batch LocalRelation</td>
+<td>优化与LocalRelation相关的逻辑算子树</td>
+<td>ConvertToLocalRelation</td>
+<td>将LocalRelation上的本地操作转换为另一个LocalRelation，当前仅处理Project投影操作</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>PropagateEmptyRelation</td>
+<td>将包含空的LocalRelation进行中折叠</td>
+</tr>
+<tr>
+<td>Batch OptimizeCodegen</td>
+<td></td>
+<td>OptimizeCodegen</td>
+<td>用来对生成的代码进行优化，主要针对的是case when语句，当case when语句中的分支数目不超过配置中的最大数据时，该表达式才能执行代码生成</td>
+</tr>
+<tr>
+<td>Batch RewriteSubquery</td>
+<td>优化子查询</td>
+<td>RewritePredicateSubquery</td>
+<td>将特定的子查询谓词逻辑转换为left-semi/anti join操作，其中EXISTS和NOT EXISTS算子分别对应semi和anti类型的join，<br>过滤条件会被当作Join的条件，IN和NOT IN也分别对应semi和anti类型的Join，过滤条件和选择的列都会被当作join的条件</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>CollapseProject</td>
+<td>会将两个相邻的Project算子组合在一起并执行别名替换，整合成一个统一的表达式</td>
+</tr>
+<tr>
+<td>Batch Optimize Metadata Only Query</td>
+<td></td>
+<td>OptimizeMetadataOnlyQuery</td>
+<td>优化执行过程中只需查找分区级别元数据的语句，适用于扫描的所有列都是分区列且包含聚合算子的情形，并且聚合算子需要满足以下情况之一：<br>聚合表达式是分区列；分区列的聚合函数有DISTINCT算子；分区列的聚合函数中是否有DISTINCT算子不影响结果</td>
+</tr>
+<tr>
+<td>Batch Extract Python UDF from Aggregate</td>
+<td>仅执行一次</td>
+<td>ExtractPythonUDFFromAggregate</td>
+<td>提取出聚合操作中的Python UDF函数。主要针对采用PySpark提交查询的情形，将参与聚合的Python自定义函数提取出来，在聚合操作完成之后执行</td>
+</tr>
+<tr>
+<td>Batch Prune File Source Table Partitions</td>
+<td>仅执行一次</td>
+<td>PruneFileSourcePartitions</td>
+<td>对数据文件中的分区进行裁剪操作，当数据文件中定义了分区信息且逻辑算子树中的LogicalRelation节点上方存在过滤算子时，<br>PruneFileSourcePartitions优化规则会尽可能地将过滤算子下推到存储层，这样可以避免读入无关的数据分区</td>
+</tr>
+<tr>
+<td>Batch User Provided Optimizers</td>
+<td>支持用户自定义的优化规则<sup id="fnref-28"><a href="#fn-28" class="footnote-ref">28</a></sup></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</div>
 <h3 id="spark-sql物理计划physicalplan" style="position:relative;"><a href="#spark-sql%E7%89%A9%E7%90%86%E8%AE%A1%E5%88%92physicalplan" aria-label="spark sql物理计划physicalplan permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Spark SQL物理计划（PhysicalPlan）</h3>
 <p>物理计划是与底层平台紧密相关的，在此阶段，Spark SQL会对生成的逻辑算子树进行进一步处理，得到物理算子树，并将LogicalPlan节点及其所包含的各种信息映射成Spark Core计算模型的元素，如RDD、Transformation和Action等，以支持其提交执行。</p>
 <p>在Spark SQL中，物理计划用SparkPlan表示，从Optimized LogicalPlan传入到Spark SQL物理计划提交并执行，主要经过3个阶段：</p>
 <ol>
-<li>由SparkPlanner将各种物理计划策略（Strategy）作用于对应的LogicalPan节点上，生成SparkPlan列表<sup id="fnref-29"><a href="#fn-29" class="footnote-ref">29</a></sup></li>
+<li>由SparkPlanner将各种物理计划策略（Strategy）作用于对应的LogicalPan节点上，生成SparkPlan列表<sup id="fnref-34"><a href="#fn-34" class="footnote-ref">34</a></sup></li>
 <li>选取最佳的SparkPlan，Spark 2.1版本中直接在候选列表中直接用<code class="language-text">next()</code>方法获取第一个</li>
 <li>提交前进行准备工作，进行一些分区排序方面的处理，确保SparkPlan各节点能够正确执行，这一步通过<code class="language-text">prepareForExecution()</code>方法调用若干规则（Rule）进行转换</li>
 </ol>
-<p>在Spark SQL中，当逻辑计划处理完毕后，会构造SparkPlanner并执行<code class="language-text">plan()</code>方法对LogicalPlan进行处理，得到对应的物理计划（<code class="language-text">Iterator[SparkPlan]</code>）<sup id="fnref-30"><a href="#fn-30" class="footnote-ref">30</a></sup>。</p>
+<p>在Spark SQL中，当逻辑计划处理完毕后，会构造SparkPlanner并执行<code class="language-text">plan()</code>方法对LogicalPlan进行处理，得到对应的物理计划（<code class="language-text">Iterator[SparkPlan]</code>）<sup id="fnref-35"><a href="#fn-35" class="footnote-ref">35</a></sup>。</p>
 <p>SparkPlanner继承自SparkStrategies类，SparkStrategies类继承自QueryPlanner基类，<code class="language-text">plan()</code>方法是现在QueryPlanner类中，SparkStrategies类本身不提供任何方法，而是在内部提供一批SparkPlanner会用到的各种策略（Strategy）实现，最后，在SparkPlanner层面将这些策略整合在一起，通过<code class="language-text">plan()</code>方法进行逐个应用。SparkPlanner本身只是一个逻辑的驱动，各种策略的<code class="language-text">apply</code>方法把逻辑执行计划算子映射成物理执行计划算子。SparkLater是一种特殊的SparkPlan，不支持执行（<code class="language-text">doExecute()</code>方法没有实现），仅用于占位，等待后续步骤处理。</p>
 <p><img src="https://www.plantuml.com/plantuml/svg/bLBBReCm4BpxAzmRI0Nkg8USMbNgWOfZb8FZhB0RFwYzLaGVFz9lwJ_r5seIGY5DL9K3OcTtPiU35nwPmw0LkPA6gx01AX1RNnQ5OxkyaIZ2EdXmt1e4WpctkbXxBdRClHHj96OeG8ClDFC8hXWglmNaeijiG2KDJ2QparRUjuYGSJFe5ZkgGQ_1UKAuOjxJnm2kgnGp1Xnz9JG-7Xr3Q2JuajRmlBo3s9EyFi3TiXATbvofdhLQxIbj_4pwLqaVR7DifYMzZwOPMZSdxJdSAWKS8y11MBM9fWQ9wMpwzVdHcqYcuFLios311GDzVL3nbtRtWXTSlHz3gLlcjlKOmmoUPsM2hk8VbYZjVgN1in56BMcQlyuzwgS7LZ82_ppmo5kbPz4V_grKiLqv-nGj9NcUfnCRVI2p-t7pbcM_mZcf9qC3ZP05c4syXjy0" alt="plantuml"></p>
 <p>生成物理计划的过程：<code class="language-text">plan()</code>方法传入LogicalPlan作为参数，将strategies应用到LogicalPlan，生成物理计划候选集合（Candidates）。如果该集合中存在PlanLater类型的SparkPlan，则通过placeholder中间变量取出对应的LogicalPlan后，递归调用<code class="language-text">plan()</code>方法，将PlanLater替换为子节点的物理计划，最后，对物理计划列表进行过滤，去掉一些不够搞笑的物理计划。</p>
@@ -1289,7 +1704,7 @@
 </ul>
 <p>在SparkPlanner中默认添加了8种Strategy来生成物理计划：</p>
 <ul>
-<li>文件数据源策略（FileSourceStrategy）：面向的是来自文件的数据源，能够匹配PhysicalOperation模式<sup id="fnref-31"><a href="#fn-31" class="footnote-ref">31</a></sup>加上LogicalRelation节点，在这种情况下，该策略会根据数据文件信息构建FileSourceScanExec物理执行计划，并在此物理执行计划后添加过滤（FilterExec）与列剪裁（ProjectExec）物理计划</li>
+<li>文件数据源策略（FileSourceStrategy）：面向的是来自文件的数据源，能够匹配PhysicalOperation模式<sup id="fnref-36"><a href="#fn-36" class="footnote-ref">36</a></sup>加上LogicalRelation节点，在这种情况下，该策略会根据数据文件信息构建FileSourceScanExec物理执行计划，并在此物理执行计划后添加过滤（FilterExec）与列剪裁（ProjectExec）物理计划</li>
 <li>DataSourcesStrategy：</li>
 <li>DDL操作策略（DDLStrategy）：仅针对CreateTable和CreateTempViewUsing这两种类型的节点，这两种情况都直接生成ExecutedCommandExec类型的物理计划</li>
 <li>SpecialLimits：</li>
@@ -1306,96 +1721,356 @@
 </ul>
 <p>根据SparkPlan的子节点数目，可以将其大致分为4类：LeafExecNode、UnaryExecNode、BinaryExecNode和其他。</p>
 <p><img src="https://www.plantuml.com/plantuml/svg/ZPAxJiCm58RtF8NPYaIQFLC5PK2YehGmHHaS-wYswajwVAnI4E-ESm6bXO4irZd_by_NHI2E5At9hhGJ9afWYgWDPL4WFyvtcbHiOW0KtX4ucWjlYoO8TUJuNhJfnvmKM0Y5vO40Yx4AUo2XJhcFPBI32PbVHFCkofHECuDjwSGis0OmP9amF0IsRJdkruOxzf6nz5cGN7BY9LlnjjeIQhUxOSDOZqGgHBW0dX_PgWy62240hRx9LwUfRnllTaDtvhY5SXHVbvrW27ekp_D-J9je8wtJ6MhItYMqPDDgdEiGDOAyKzh8fGx9qiGEI5OuLDDEFR4-eGJiZHsrzJXqwj_E2_AChi_MA_tz6uX8S8kUIv7kh7gfPsbxqxeduP_SZx5BDyjbzP0U2ZfkDlvuPlep_ymMu6Hw0Ly0" alt="plantuml"></p>
-<p>LeafExecNode类型的SparkPlan负责初始RDD的创建：</p>
-<ul>
-<li>RangeExec：利用SparkContext中的parallelize方法生成给定范围内的64位数据的RDD</li>
-<li>LocalTableScanExec</li>
-<li>ExternalRDDScanExec</li>
-<li>HiveTableScanExec：会根据Hive数据表存储的HDFS信息直接生成HadoopRDD</li>
-<li>InMemoryTableScanExec</li>
-<li>DataSourceScanExec
-<ul>
-<li>FileSourceScanExec：根据数据表所在的源文件生成FileScanRDD</li>
-<li>RawDataSourceScanExec</li>
-</ul>
-</li>
-<li>RDDScanExec</li>
-<li>StreamingRelationExec</li>
-<li>ReusedExchangeExec</li>
-<li>PlanLater</li>
-<li>MyPlan</li>
-</ul>
-<p>UnaryExecNode类型的SparkPlan负责RDD的转换操作：</p>
-<ul>
-<li>InputAdapter</li>
-<li>Exchange：对子节点产生的RDD进行重分区
-<ul>
-<li>BroadcastExchangeExec</li>
-<li>ShuffleExchange</li>
-</ul>
-</li>
-<li>InsertIntoHiveTable</li>
-<li>MapGroupsExec</li>
-<li>ProjectExec：对子节点产生的RDD进行列剪裁</li>
-<li>ReferenceSort</li>
-<li>SampleExec：对子节点产生的RDD进行采样</li>
-<li>ScriptTransformation</li>
-<li>SortAggregateExec</li>
-<li>SortExec：按照一定条件对子节点产生的RDD进行排序</li>
-<li>StateStoreSaveExec</li>
-<li>SubqueryExec</li>
-<li>GenerateExec</li>
-<li>AppendColumnsExec</li>
-<li>BaseLimitExec
-<ul>
-<li>LocalLimitExec</li>
-<li>GlobalLiimitExec</li>
-</ul>
-</li>
-<li>ExpandExec</li>
-<li>CoalesceExec</li>
-<li>CollectLimitExec</li>
-<li>DebugExec</li>
-<li>ObjectConsumerExec
-<ul>
-<li>AppendColumnsWithObjectExec</li>
-<li>MapElementsExec</li>
-<li>MapPartitionsExec</li>
-<li>SerializeFromObjectExec</li>
-</ul>
-</li>
-<li>DeserializeToObjectExec</li>
-<li>ExceptionInjectingOpeartor</li>
-<li>FilterExec：对子节点产生的RDD进行行过滤操作</li>
-<li>FlatMapGroupsInRExec</li>
-<li>WholeStageCodegenExec：将生成的代码整合成单个Java函数</li>
-<li>HashAggregateExec</li>
-<li>TakeOrderedAndProjectExec</li>
-<li>WindowExec</li>
-</ul>
-<p>BinaryExecNode类型的SparkPlan除CoGroupExec外都是不同类型的Join执行计划：</p>
-<ul>
-<li>BroadcastHashJoinExec</li>
-<li>BroadcastNestedLoopJoinExec</li>
-<li>CartesianProductExec</li>
-<li>CoGroupExec：处理逻辑类似Spark Core中CoGroup操作，将两个要进行合并的左、右子SparkSplan所产生的RDD，按照相同的key值组合到一起，返回的结果中包含两个Iterator，分别代表左子树中的值与右子树中的值</li>
-<li>ShuffledHashJoinExec</li>
-<li>SortMergeJoinExec</li>
-</ul>
-<p>其他类型的SparkPlan：</p>
-<ul>
-<li>CodegenSupport</li>
-<li>UnionExec</li>
-<li>DummySparkPlan：对每个成员赋予默认值</li>
-<li>FastOperator</li>
-<li>MyPlan：用于在Driver端更新Metric信息</li>
-<li>EventTimeWatermarkExec</li>
-<li>BatchEvalPythonExec</li>
-<li>ExecutedCommandExec</li>
-<li>OutputFakerExec</li>
-<li>StatefulOperator</li>
-<li>ObjectProducerExec</li>
-</ul>
+<div class="wrapper" markdown="block">
+<table>
+<thead>
+<tr>
+<th>分组</th>
+<th>分组描述</th>
+<th>SparkPlan</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LeafExecNode类型</td>
+<td>创建初始RDD</td>
+<td>RangeExec</td>
+<td>利用SparkContext中的parallelize方法生成给定范围内的64位数据的RDD</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>LocalTableScanExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ExternalRDDScanExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>HiveTableScanExec</td>
+<td>会根据Hive数据表存储的HDFS信息直接生成HadoopRDD</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>InMemoryTableScanExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>DataSourceScanExec</td>
+<td>FileSourceScanExec：根据数据表所在的源文件生成FileScanRDD<br>RawDataSourceScanExec</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>RDDScanExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>StreamingRelationExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ReusedExchangeExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>PlanLater</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>MyPlan</td>
+<td></td>
+</tr>
+<tr>
+<td>UnaryExecNode类型</td>
+<td>负责RDD的转换操作</td>
+<td>InputAdapter</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>Exchange</td>
+<td>对子节点产生的RDD进行重分区，包括BroadcastExchange、ExecShuffleExchange</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>InsertIntoHiveTable</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>MapGroupsExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ProjectExec</td>
+<td>对子节点产生的RDD进行列剪裁</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ReferenceSort</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>SampleExec</td>
+<td>对子节点产生的RDD进行采样</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ScriptTransformation</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>SortAggregateExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>SortExec</td>
+<td>按照一定条件对子节点产生的RDD进行排序</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>StateStoreSaveExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>SubqueryExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>GenerateExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>AppendColumnsExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>BaseLimitExec</td>
+<td>LocalLimitExec<br>GlobalLiimitExec</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ExpandExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>CoalesceExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>CollectLimitExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>DebugExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ObjectConsumerExec</td>
+<td>AppendColumnsWithObjectExec<br>MapElementsExec<br>MapPartitionsExec<br>SerializeFromObjectExec</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>DeserializeToObjectExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ExceptionInjectingOpeartor</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>FilterExec</td>
+<td>对子节点产生的RDD进行行过滤操作</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>FlatMapGroupsInRExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>WholeStageCodegenExec</td>
+<td>将生成的代码整合成单个Java函数</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>HashAggregateExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>TakeOrderedAndProjectExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>WindowExec</td>
+<td></td>
+</tr>
+<tr>
+<td>BinaryExecNode类型</td>
+<td>除CoGroupExec外都是不同类型的Join执行计划</td>
+<td>BroadcastHashJoinExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>BroadcastNestedLoopJoinExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>CartesianProductExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>CoGroupExec</td>
+<td>处理逻辑类似Spark Core中CoGroup操作，将两个要进行合并的左、右子SparkSplan所产生的RDD，按照相同的key值组合到一起，<br>返回的结果中包含两个Iterator，分别代表左子树中的值与右子树中的值</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ShuffledHashJoinExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>SortMergeJoinExec</td>
+<td></td>
+</tr>
+<tr>
+<td>其他类型的SparkPlan</td>
+<td></td>
+<td>CodegenSupport</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>UnionExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>DummySparkPlan</td>
+<td>对每个成员赋予默认值</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>FastOperator</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>MyPlan</td>
+<td>用于在Driver端更新Metric信息</td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>EventTimeWatermarkExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>BatchEvalPythonExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ExecutedCommandExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>OutputFakerExec</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>StatefulOperator</td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td>ObjectProducerExec</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</div>
 <p>在SparkPlan分区体系实现中，Partitioning表示对数据进行分区的操作，Distribution则表示数据的分布，在Spark SQL中，Distribution和Partitioning均被定义为接口，具体实现有多个类。</p>
 <p>Distribution定义了查询执行时，同一个表达式下的不同数据元组在集群各个节点上的分布情况，可以用来描述以下两种不同粒度的数据特征：一是节点间（Inner-node）分区信息，即数据元组在集群不同的物理节点上是如何分区的，用来判断某些算子（如Aggregate）能否进行局部计算（Partial Operation），避免全局操作的代价；一是分区数据内（Inner-partition）排序信息，即单个分区内数据是如何分布的。在Spark 2.1中包括以下5种Distribution实现：</p>
 <ul>
@@ -1465,7 +2140,7 @@
 <span class="token punctuation">}</span></code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span></span></pre></div>
 <p>EnsureRequirements在遍历SparkPlan的过程中，当匹配到Exchange节点（ShuffleExchange）且其子节点也是Exchange类型时，会检查两者的Partitioning方法，判断能否消除多余的Exchange节点，另外，遍历过程中会逐个调用<code class="language-text">ensureDistributionAndOrdering</code>方法来确保每个节点的分区与排序需求，核心逻辑大致分为以下3步：</p>
 <ol>
-<li>添加Exchange节点：Exchange节点是实现数据并行化的重要算子，用于解决数据分布（Distribution）相关问题，有BroadcastExchangeExec和ShuffleExechange两种子类，ShuffleExchange会通过Shuffle操作进行重分区处理，BroadcastExchangeExec则对应广播操作。有两种情形需要添加Exchange节点：数据分布不满足，子节点的物理计划输出数据无法满足（Satisfies）当前物理计划处理逻辑中对数据分布的要求；数据分布不兼容，当前物理计划为BinaryExecNode类型，即存在两个子物理计划时，两个子物理计划的输出数据可能不兼容（Compatile）。在<code class="language-text">ensureDistributionAndOrdering</code>方法中，添加Exchange节点的过程可以细分为两个阶段，分别针对单个节点和多个节点，第一个阶段是判断每个子节点的分区方式是否可以满足（Satisfies）对应所需的数据分布，如果满足，则不需要创建Exchange节点；否则根据是否广播来决定添加何种类型的Exchange节点<sup id="fnref-32"><a href="#fn-32" class="footnote-ref">32</a></sup>。第二个阶段专门针对多个子节点的情形，如果当前SparkPlan节点需要所有子节点分区方式兼容但并不能满足时，就需要创建ShuffleExchange节点<sup id="fnref-33"><a href="#fn-33" class="footnote-ref">33</a></sup>。ShuffleExchange执行得到的RDD称为ShuffledRowRDD，ShuffleExchange执行<code class="language-text">doExecute</code>时，首先会创建ShuffleDependency，然后根据ShuffleDependency构造ShuffleRowRDD,ShuffleDependency的创建分为以下两种情况，一是包含ExchangeCoordinator协调器，如果需要ExchangeCoordinator协调ShuffleRowRDD的分区，则需要先提交该ShuffleExchange之前的Stage到Spark集群执行，完成之后确定ShuffleRowRDD的分区索引信息，一是直接创建，直接执行<code class="language-text">prepareShuffleDependency</code>方法来创建RDD的依赖，然后根据ShuffleDependency创建ShuffledRowRDD对象，在这种情况下，ShuffleRowRDD中每个分区的ID与Exchange节点进行shuffle操作后的数据分区是一对一的映射关系。直接创建ShuffleDependency的过程中，首先会根据传入的newPartitioning信息构造对应的partiitoner，然后基于该partitioner生成ShuffleDependency最重要的构造参数<code class="language-text">rddWithPartitionIds(RDD[Product2[Int, InternalRow]])</code>类型，其中<code class="language-text">[Int, InternalRow]</code>代表某行数据及其所在分区的partitionId，其取值范围为<code class="language-text">[0, numPartitions-1]</code>，最终在rddWithPartitionIds基础上创建ShuffleDependency对象
+<li>添加Exchange节点：Exchange节点是实现数据并行化的重要算子，用于解决数据分布（Distribution）相关问题，有BroadcastExchangeExec和ShuffleExechange两种子类，ShuffleExchange会通过Shuffle操作进行重分区处理，BroadcastExchangeExec则对应广播操作。有两种情形需要添加Exchange节点：数据分布不满足，子节点的物理计划输出数据无法满足（Satisfies）当前物理计划处理逻辑中对数据分布的要求；数据分布不兼容，当前物理计划为BinaryExecNode类型，即存在两个子物理计划时，两个子物理计划的输出数据可能不兼容（Compatile）。在<code class="language-text">ensureDistributionAndOrdering</code>方法中，添加Exchange节点的过程可以细分为两个阶段，分别针对单个节点和多个节点，第一个阶段是判断每个子节点的分区方式是否可以满足（Satisfies）对应所需的数据分布，如果满足，则不需要创建Exchange节点；否则根据是否广播来决定添加何种类型的Exchange节点<sup id="fnref-37"><a href="#fn-37" class="footnote-ref">37</a></sup>。第二个阶段专门针对多个子节点的情形，如果当前SparkPlan节点需要所有子节点分区方式兼容但并不能满足时，就需要创建ShuffleExchange节点<sup id="fnref-38"><a href="#fn-38" class="footnote-ref">38</a></sup>。ShuffleExchange执行得到的RDD称为ShuffledRowRDD，ShuffleExchange执行<code class="language-text">doExecute</code>时，首先会创建ShuffleDependency，然后根据ShuffleDependency构造ShuffleRowRDD,ShuffleDependency的创建分为以下两种情况，一是包含ExchangeCoordinator协调器，如果需要ExchangeCoordinator协调ShuffleRowRDD的分区，则需要先提交该ShuffleExchange之前的Stage到Spark集群执行，完成之后确定ShuffleRowRDD的分区索引信息，一是直接创建，直接执行<code class="language-text">prepareShuffleDependency</code>方法来创建RDD的依赖，然后根据ShuffleDependency创建ShuffledRowRDD对象，在这种情况下，ShuffleRowRDD中每个分区的ID与Exchange节点进行shuffle操作后的数据分区是一对一的映射关系。直接创建ShuffleDependency的过程中，首先会根据传入的newPartitioning信息构造对应的partiitoner，然后基于该partitioner生成ShuffleDependency最重要的构造参数<code class="language-text">rddWithPartitionIds(RDD[Product2[Int, InternalRow]])</code>类型，其中<code class="language-text">[Int, InternalRow]</code>代表某行数据及其所在分区的partitionId，其取值范围为<code class="language-text">[0, numPartitions-1]</code>，最终在rddWithPartitionIds基础上创建ShuffleDependency对象
 <div class="gatsby-highlight" data-language="scala"><pre style="counter-reset: linenumber NaN" class="language-scala line-numbers"><code class="language-scala"><span class="token comment">// 第一阶段</span>
 <span class="token comment">// defaultNumPreShufflePartitions决定了Shuffle操作过程中分区的数目，是一个用户可配置的参数（spark.sql.shuffle.partitions），默认为200</span>
 <span class="token comment">// createPartitioning方法会根据数据分布与分区数目创建对应的分区方式，具体对应关系是：AllTuples对应SinglePartition，ClusteredDistribution对应HashPartitioning，OrderedDistribution对应RangePartitioning</span>
@@ -1518,7 +2193,7 @@ children <span class="token operator">=</span> children<span class="token punctu
 </li>
 </ol>
 <p>Ensurerequirements规则的处理逻辑结束后，调用TreeNode中的<code class="language-text">withNewChildren</code>将SparkPlan中原有的子节点替换为新的子节点。</p>
-<h2 id="join" style="position:relative;"><a href="#join" aria-label="join permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>join</h2>
+<h2 id="spark-join" style="position:relative;"><a href="#spark-join" aria-label="spark join permalink" class="anchor before"><svg aria-hidden="true" focusable="false" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Spark Join</h2>
 <p>Spark提供了5种Join策略：</p>
 <ul>
 <li>Broadcast Hash Join：即mapjoin，将小表的数据广播到所有Executor（利用collect算子将小表的数据从Executor拉到Driver，在Driver调用sparkContext.broadcast广播到所有 Executor），在Executor上进行Hash Join。Hash Join指将小表的数据构建为hash table，大表的分区数据匹配Hash Table中的数据。需满足以下条件，等值连接，小表数据大小小于spark.sql.autoBroadcastJoinThreshold。支持全外连接以外的所有连接类型。另外，外连接中基表不能被广播，当小表数据较大时会造成Driver OOM</li>
@@ -1616,14 +2291,14 @@ children <span class="token operator">=</span> children<span class="token punctu
 <p>spark在2.2版本推出了CBO（Cost Based Optimization，基于性能模型的优化），即基于数据表的统计信息（如表大小、数据列分布、空值数、最大值、最小值等）来选择优化策略。因为有统计数据支持，所以CBO选择的策略往往优于RBO选择的优化规则。但CBO使用面太窄，仅支持注册到Hive Metastore的数据表，统计信息的搜集效率比较低，需要调用ANALYZE TABLE COMPUTE STATISTICS语句收集统计信息，执行计划运行时，如果数据分布发生动态变化，执行计划并不会跟着调整、适配。</p>
 <p>spark在3.0版本推出了AQE（Adaptive Query Execution，自适应查询执行），AQE是Spark SQL的一种动态优化机制，在运行时，每当Shuffle Map阶段执行完毕，AQE都会结合这个阶段的统计信息，基于既定的规则动态地调整、修正尚未执行的逻辑计划和物理计划，来完成对原始查询语句的运行时优化。</p>
 <p>AQE优化机制触发的时机是Shuffle Map阶段执行完毕，即 AQE优化的频次与执行计划中Shuffle的次数一致。AQE的统计信息基于Shuffle Map阶段输出的中间文件。每个Map Task都会输出以data为后缀的数据文件和以index为结尾的索引文件，统称为中间文件。每个data文件的大小、空文件数量与占比、每个Reduce Task对应的分区大小，这些基于中间文件的统计值构成了AQE进行优化的信息来源。AQE从运行时获取统计信息，在条件允许的情况下，优化决策会分别作用到逻辑计划和物理计划。</p>
-<p>AQE实现基于DAGScheduler支持提交单个mapStage。启用AQE后，Spark会将逻辑执行计划拆分为多个QueryStage, 在执行QueryStage时先提交其子QueryStage，在所有子QueryStage完成后，收集到shuffle数据统计信息，并根据这些信息重新启动逻辑优化阶段和物理计划阶段，动态更新查询计划。AQE定义了Shuffle Query Stage（将其输出物化为Shuffle文件）和Broadcast Query Stage（将其输出物化到Driver内存中的数组）两种QueryStage，分别是基于Shuffle和Broadcast来进行划分的。对于物理执行计划，AQE会在原执行计划中查找Exchange并添加两个新的操作节点QueryStage（是一个阶段的根节点，负责运行时决策）和QueryStageInput（是一个阶段的叶子节点，负责在物理计划更新后将子阶段的结果提供给其父阶段）。</p>
+<p>AQE实现基于DAGScheduler支持提交单个mapStage。启用AQE后，Spark会将逻辑执行计划拆分为多个QueryStage, 在执行QueryStage时先提交其子QueryStage，在所有子QueryStage完成后，收集到shuffle数据统计信息，并根据这些信息重新启动逻辑优化阶段和物理计划阶段，动态更新查询计划。AQE定义了ShuffleQueryStage（将其输出物化为Shuffle文件）和BroadcastQueryStage（将其输出物化到Driver内存中的数组）两种QueryStage，分别对应Shuffle和Broadcast。对于物理执行计划，AQE会在原执行计划中查找Exchange并添加两个新的操作节点QueryStage（是一个阶段的根节点，负责运行时决策）和QueryStageInput（是一个阶段的叶子节点，负责在物理计划更新后将子阶段的结果提供给其父阶段）。</p>
 <p>AQE主要有三大特性：</p>
 <ul>
 <li>Join策略调整：包括规则DemoteBroadcastHashJoin和规则OptimizeLocalShuffleReader，统计Map阶段中间文件总大小、中间文件空文件占比，存在小表时自动将Shuffle Sort Merge Join降级为Broadcast Hash Join</li>
 <li>自动分区合并：包括规则CoalesceShufflePartitions，在Shuffle Read阶段，当Shuffle Read Task把数据分片从map端拉回时，AQE按照分区编号的顺序，依次把小于目标尺寸的分区合并在一起</li>
 <li>自动倾斜处理：包括规则OptimizeSkewedJoin，统计每个Reduce Task分区大小，自动拆分过大的Reduce Task分区，降低单个Reduce Task的工作负载</li>
 </ul>
-<p><strong>DemoteBroadcastHashJoin</strong> 逻辑优化规则，对于参与join<sup id="fnref-34"><a href="#fn-34" class="footnote-ref">34</a></sup>的两张表，如果在它们分别完成Shuffle Map阶段的计算之后，存在一张表同时满足中间文件尺寸总和小于广播阈值（配置项spark.sql.autoBroadcastJoinThreshold设置）和空文件占比小于配置项（配置项spark.sql.adaptive.nonEmptyPartitionRatioForBroadcastJoin设置），Shuffle Sort Merge Join就会降级为Broadcast Hash Join</p>
+<p><strong>DemoteBroadcastHashJoin</strong> 逻辑优化规则，对于参与join<sup id="fnref-39"><a href="#fn-39" class="footnote-ref">39</a></sup>的两张表，如果在它们分别完成Shuffle Map阶段的计算之后，存在一张表同时满足中间文件尺寸总和小于广播阈值（配置项spark.sql.autoBroadcastJoinThreshold设置）和空文件占比小于配置项（配置项spark.sql.adaptive.nonEmptyPartitionRatioForBroadcastJoin设置），Shuffle Sort Merge Join就会降级为Broadcast Hash Join</p>
 <p><strong>OptimizeLocalShuffleReader</strong> 物理优化规则，用于避免Shuffle Sort Merge Join降级为Broadcast Hash Join时大表的Shuffle操作，Reduce Task就地读取本地节点的中间文件，完成与广播小表的关联操作，由spark.sql.adaptive.localShuffleReader.enabled设置，默认值为true</p>
 <p><strong>CoalesceShufflePartitions</strong> 物理优化规则，在Shuffle Read阶段，当Reduce Task拉回数据分片时，AQE按照分区编号的顺序，依次把小于目标分区大小的分区合并在一起，目标分区尺寸由spark.sql.adaptive.advisoryPartitionSizeInBytes和spark.sql.adaptive.coalescePartitions.minPartitionNum控制</p>
 <p><strong>OptimizeSkewedJoin</strong> 物理优化规则，在Shuffle Read阶段，当Reduce Task所需处理的分区大小大于一定阈值时，AQE会把大分区拆分成多个小分区，在同一个Executor内部，本该由一个Task去处理的大分区，被拆分成多个小分区并交由多个Task去计算。倾斜分区和拆分粒度由spark.sql.adaptive.skewJoin.skewedPartitionFactor、spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes和spark.sql.adaptive.advisoryPartitionSizeInBytes控制。自动倾斜处理只能解决Task之间的计算负载平衡，不能解决不同Executor之间的负载均衡问题。当应用场景中的数据倾斜比较简单，如虽然有倾斜但是数据分布相对均匀或是关联计算中只有一边倾斜，完全可以依赖AQE的自动倾斜处理机制，当时当应用场景中的数据倾斜很复杂，如数据中不同key的分布悬殊，或是参与关联的两表都存在大量的倾斜，就需要衡量AQE的自动化机制与手工处理倾斜之间的利害关系。</p>
@@ -1695,6 +2370,350 @@ children <span class="token operator">=</span> children<span class="token punctu
 </tbody>
 </table>
 </div>
+<p>首先，Spark SQL经过catalyst转换为物理执行计划。接着，在AQE开启后，AdaptiveSparkPlanExec被执行时，它会调用<code class="language-text">getFinalPhysicalPlan()</code>方法来启动执行流程，通过递归地自上而下地调用<code class="language-text">createQueryStages()</code>方法，将物理执行计划转换为包含QeuryStageExec的树（主要是将broadcast和shuffle转换为其对应的QueryStageExec），它将物化其输出，并将输出的统计信息用于优化后续查询阶段。在第一次转换之后，会记录所有新的和未解决的QueryStage，这些阶段稍后会提交执行。在newQueryStage中会调用AQE物理计划优化。然后，将当前逻辑执行计划中的所有querystages替换为LogicalQueryStage，转换后的逻辑计划有新的统计数据可用，再调用其<code class="language-text">reOptimize()</code>方法产生全新的逻辑执行计划和物理执行计划，并比较新旧计划的成本，如果新的计划比前一个更优，则将其提升为新的currentPhysicalPlan和currentLogicalPlan。一旦执行了所有查询阶段，就会生成最终的物理计划，在<code class="language-text">reOptimize()</code>中会调用AQE逻辑优化规则。最后，会再次应用AQE物理优化规则，并返回最终的物理计划。</p>
+<div class="gatsby-highlight" data-language="scala"><pre style="counter-reset: linenumber NaN" class="language-scala line-numbers"><code class="language-scala"><span class="token comment">// 物理优化规则InsertAdaptiveSparkPlan是AQE开启入口，在QeuryExecution#preparations()中被调用（Spark SQL从逻辑计划转换为物理计划后，还需要经过preparations阶段才能执行）</span>
+<span class="token keyword">class</span> QueryExecution<span class="token punctuation">(</span>
+    <span class="token keyword">val</span> sparkSession<span class="token operator">:</span> SparkSession<span class="token punctuation">,</span>
+    <span class="token keyword">val</span> logical<span class="token operator">:</span> LogicalPlan<span class="token punctuation">,</span>
+    <span class="token keyword">val</span> tracker<span class="token operator">:</span> QueryPlanningTracker <span class="token operator">=</span> <span class="token keyword">new</span> QueryPlanningTracker<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+
+    <span class="token keyword">def</span> preparations<span class="token operator">:</span> Seq<span class="token punctuation">[</span>Rule<span class="token punctuation">[</span>SparkPlan<span class="token punctuation">]</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">{</span>
+        QueryExecution<span class="token punctuation">.</span>preparations<span class="token punctuation">(</span>
+            sparkSession<span class="token punctuation">,</span>
+            Option<span class="token punctuation">(</span>InsertAdaptiveSparkPlan<span class="token punctuation">(</span>AdaptiveExecutionContext<span class="token punctuation">(</span>sparkSession<span class="token punctuation">,</span> <span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">def</span> preparations<span class="token punctuation">(</span>sparkSession<span class="token operator">:</span> SparkSession<span class="token punctuation">,</span> adaptiveExecutionRule<span class="token operator">:</span> Option<span class="token punctuation">[</span>InsertAdaptiveSparkPlan<span class="token punctuation">]</span> <span class="token operator">=</span> None<span class="token punctuation">)</span><span class="token operator">:</span> Seq<span class="token punctuation">[</span>Rule<span class="token punctuation">[</span>SparkPlan<span class="token punctuation">]</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">{</span>
+        adaptiveExecutionRule<span class="token punctuation">.</span>toSeq <span class="token operator">++</span>
+            Seq<span class="token punctuation">(</span>
+                CoalesceBucketsInJoin<span class="token punctuation">,</span>
+                PlanDynamicPruningFilters<span class="token punctuation">(</span>sparkSession<span class="token punctuation">)</span><span class="token punctuation">,</span>
+                PlanSubqueries<span class="token punctuation">(</span>sparkSession<span class="token punctuation">)</span><span class="token punctuation">,</span>
+                RemoveRedundantProjects<span class="token punctuation">,</span>
+                EnsureRequirements<span class="token punctuation">,</span>
+                RemoveRedundantSorts<span class="token punctuation">,</span>
+                DisableUnnecessaryBucketedScan<span class="token punctuation">,</span>
+                ApplyColumnarRulesAndInsertTransitions<span class="token punctuation">(</span>sparkSession<span class="token punctuation">.</span>sessionState<span class="token punctuation">.</span>columnarRules<span class="token punctuation">)</span><span class="token punctuation">,</span>
+                CollapseCodegenStages<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+                ReuseExchange<span class="token punctuation">,</span>
+                ReuseSubquery
+            <span class="token punctuation">)</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+
+<span class="token comment">// 物理优化规则InsertAdaptiveSparkPlan用AdaptiveSparkPlanExec包装query plan，AdaptiveSparkPlanExec用于执行query plan并在运行时基于运行时统计信息进行再次优化</span>
+<span class="token keyword">class</span> InsertAdaptiveSparkPlan<span class="token punctuation">(</span>adaptiveExecutionContext<span class="token operator">:</span> AdaptiveExecutionContext<span class="token punctuation">)</span> <span class="token keyword">extends</span> Rule<span class="token punctuation">[</span>SparkPlan<span class="token punctuation">]</span> <span class="token punctuation">{</span>
+
+    <span class="token keyword">def</span> apply<span class="token punctuation">(</span>plan<span class="token operator">:</span> SparkPlan<span class="token punctuation">)</span><span class="token operator">:</span> SparkPlan <span class="token operator">=</span> applyInternal<span class="token punctuation">(</span>plan<span class="token punctuation">,</span> <span class="token boolean">false</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> applyInternal<span class="token punctuation">(</span>plan<span class="token operator">:</span> SparkPlan<span class="token punctuation">,</span> isSubquery<span class="token operator">:</span> <span class="token builtin">Boolean</span><span class="token punctuation">)</span><span class="token operator">:</span> SparkPlan <span class="token operator">=</span> plan <span class="token keyword">match</span> <span class="token punctuation">{</span>
+        <span class="token keyword">case</span> _ <span class="token keyword">if</span> <span class="token operator">!</span>conf<span class="token punctuation">.</span>adaptiveExecutionEnabled <span class="token keyword">=></span> plan
+        <span class="token comment">// 和数据写入相关的命令算子不会应用AQE</span>
+        <span class="token keyword">case</span> _<span class="token operator">:</span> ExecutedCommandExec <span class="token keyword">=></span> plan
+        <span class="token keyword">case</span> c<span class="token operator">:</span> DataWritingCommandExec <span class="token keyword">=></span> c<span class="token punctuation">.</span>copy<span class="token punctuation">(</span>child <span class="token operator">=</span> apply<span class="token punctuation">(</span>c<span class="token punctuation">.</span>child<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token keyword">case</span> c<span class="token operator">:</span> V2CommandExec <span class="token keyword">=></span> c<span class="token punctuation">.</span>withNewChildren<span class="token punctuation">(</span>c<span class="token punctuation">.</span>children<span class="token punctuation">.</span>map<span class="token punctuation">(</span>apply<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token comment">// 检查是否应用AQE</span>
+        <span class="token keyword">case</span> _ <span class="token keyword">if</span> shouldApplyAQE<span class="token punctuation">(</span>plan<span class="token punctuation">,</span> isSubquery<span class="token punctuation">)</span> <span class="token keyword">=></span>
+            <span class="token comment">// 检查是否支持AQE</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>supportAdaptive<span class="token punctuation">(</span>plan<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                <span class="token comment">// 递归处理子查询，并传入共享阶段缓存以供Exchange重用，如果任一子查询不支持AQE则退回非AQE模式</span>
+                <span class="token comment">// 构建一个子查询map</span>
+                <span class="token keyword">val</span> subqueryMap <span class="token operator">=</span> buildSubqueryMap<span class="token punctuation">(</span>plan<span class="token punctuation">)</span>
+                <span class="token comment">// 获取PlanAdaptiveSubqueries预处理规则</span>
+                <span class="token keyword">val</span> planSubqueriesRule <span class="token operator">=</span> PlanAdaptiveSubqueries<span class="token punctuation">(</span>subqueryMap<span class="token punctuation">)</span>
+                <span class="token keyword">val</span> preprocessingRules <span class="token operator">=</span> Seq<span class="token punctuation">(</span>planSubqueriesRule<span class="token punctuation">)</span>
+                <span class="token comment">// 应用预处理规则</span>
+                <span class="token keyword">val</span> newPlan <span class="token operator">=</span> AdaptiveSparkPlanExec<span class="token punctuation">.</span>applyPhysicalRules<span class="token punctuation">(</span>plan<span class="token punctuation">,</span> preprocessingRules<span class="token punctuation">)</span>
+                <span class="token comment">// 返回物理执行计划AdaptiveSpakPlanExec</span>
+                AdaptiveSparkPlanExec<span class="token punctuation">(</span>newPlan<span class="token punctuation">,</span> adaptiveExecutionContext<span class="token punctuation">,</span> preprocessingRules<span class="token punctuation">,</span> isSubquery<span class="token punctuation">)</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span>
+                plan
+            <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/**
+      * 检查是否对物理执行计划应用AQE
+      * AQE只对包含Exchange算子或子查询的查询有效
+      * 查询为子查询或者至少满足以下一个条件时才应用AQE
+      * + 开启强制应用AQE（配置项spark.sql.adaptive.forceApply为true）
+      * + 物理执行计划中包含Exchange算子或者需要添加Exchange算子（SparkPlan.requiredChildDistribution）
+      * + 查询中包含子查询
+      */</span>
+    <span class="token keyword">def</span> shouldApplyAQE<span class="token punctuation">(</span>plan<span class="token operator">:</span> SparkPlan<span class="token punctuation">,</span> isSubquery<span class="token operator">:</span> <span class="token builtin">Boolean</span><span class="token punctuation">)</span><span class="token operator">:</span> <span class="token builtin">Boolean</span> <span class="token operator">=</span> <span class="token punctuation">{</span>
+        conf<span class="token punctuation">.</span>getConf<span class="token punctuation">(</span>SQLConf<span class="token punctuation">.</span>ADAPTIVE_EXECUTION_FORCE_APPLY<span class="token punctuation">)</span>
+        <span class="token operator">||</span> isSubquery
+        <span class="token operator">||</span> <span class="token punctuation">{</span>
+            plan<span class="token punctuation">.</span>find <span class="token punctuation">{</span>
+                <span class="token keyword">case</span> _<span class="token operator">:</span> Exchange <span class="token keyword">=></span> <span class="token boolean">true</span>
+                <span class="token keyword">case</span> p <span class="token keyword">if</span> <span class="token operator">!</span>p<span class="token punctuation">.</span>requiredChildDistribution<span class="token punctuation">.</span>forall<span class="token punctuation">(</span>_ <span class="token operator">==</span> UnspecifiedDistribution<span class="token punctuation">)</span> <span class="token keyword">=></span> <span class="token boolean">true</span>
+                <span class="token keyword">case</span> p <span class="token keyword">=></span> p<span class="token punctuation">.</span>expressions<span class="token punctuation">.</span>exists<span class="token punctuation">(</span>_<span class="token punctuation">.</span>find <span class="token punctuation">{</span>
+                    <span class="token keyword">case</span> _<span class="token operator">:</span> SubqueryExpression <span class="token keyword">=></span> <span class="token boolean">true</span>
+                    <span class="token keyword">case</span> _ <span class="token keyword">=></span> <span class="token boolean">false</span>
+                <span class="token punctuation">}</span><span class="token punctuation">.</span>isDefined<span class="token punctuation">)</span>
+        <span class="token punctuation">}</span><span class="token punctuation">.</span>isDefined<span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/**
+      * 检查物理执行计划是否支持AQE，必须满足以下四个条件
+      * + 物理执行计划需要关联一个逻辑执行计划
+      * + 物理执行计划关联的逻辑执行计划不包含流式数据源
+      * + 物理执行计划不包含DynamicPruningSubquery
+      * + 物理执行计划的所有子节点都必须支持AQE
+      */</span>
+    <span class="token keyword">def</span> supportAdaptive<span class="token punctuation">(</span>plan<span class="token operator">:</span> SparkPlan<span class="token punctuation">)</span><span class="token operator">:</span> <span class="token builtin">Boolean</span> <span class="token operator">=</span> <span class="token punctuation">{</span>
+        plan<span class="token punctuation">.</span>logicalLink<span class="token punctuation">.</span>isDefined    <span class="token comment">// logicalLink()返回物理执行计划关联的逻辑执行计划</span>
+        <span class="token operator">&amp;&amp;</span> <span class="token operator">!</span>plan<span class="token punctuation">.</span>logicalLink<span class="token punctuation">.</span>exists<span class="token punctuation">(</span>_<span class="token punctuation">.</span>isStreaming<span class="token punctuation">)</span>
+        <span class="token operator">&amp;&amp;</span> <span class="token operator">!</span>plan<span class="token punctuation">.</span>expressions<span class="token punctuation">.</span>exists<span class="token punctuation">(</span>_<span class="token punctuation">.</span>find<span class="token punctuation">(</span>_<span class="token punctuation">.</span>isInstanceOf<span class="token punctuation">[</span>DynamicPruningSubquery<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">.</span>isDefined<span class="token punctuation">)</span>
+        <span class="token operator">&amp;&amp;</span> plan<span class="token punctuation">.</span>children<span class="token punctuation">.</span>forall<span class="token punctuation">(</span>supportAdaptive<span class="token punctuation">)</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">/** 为所有子查询返回表达式id到执行计划的map
+      */</span>
+    <span class="token keyword">def</span> buildSubqueryMap<span class="token punctuation">(</span>plan<span class="token operator">:</span> SparkPlan<span class="token punctuation">)</span><span class="token operator">:</span> Map<span class="token punctuation">[</span><span class="token builtin">Long</span><span class="token punctuation">,</span> SubqueryExec<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">{</span>
+        <span class="token keyword">val</span> subqueryMap <span class="token operator">=</span> mutable<span class="token punctuation">.</span>HashMap<span class="token punctuation">.</span>empty<span class="token punctuation">[</span><span class="token builtin">Long</span><span class="token punctuation">,</span> SubqueryExec<span class="token punctuation">]</span>
+        plan<span class="token punctuation">.</span>foreach<span class="token punctuation">(</span>_<span class="token punctuation">.</span>expressions<span class="token punctuation">.</span>foreach<span class="token punctuation">(</span>_<span class="token punctuation">.</span>foreach <span class="token punctuation">{</span>
+            <span class="token keyword">case</span> expressions<span class="token punctuation">.</span>ScalarSubquery<span class="token punctuation">(</span>p<span class="token punctuation">,</span> _<span class="token punctuation">,</span> exprId<span class="token punctuation">)</span> <span class="token keyword">if</span> <span class="token operator">!</span>subqueryMap<span class="token punctuation">.</span>contains<span class="token punctuation">(</span>exprId<span class="token punctuation">.</span>id<span class="token punctuation">)</span> <span class="token keyword">=></span>
+                <span class="token keyword">val</span> executedPlan <span class="token operator">=</span> compileSubquery<span class="token punctuation">(</span>p<span class="token punctuation">)</span>
+                verifyAdaptivePlan<span class="token punctuation">(</span>executedPlan<span class="token punctuation">,</span> p<span class="token punctuation">)</span>
+                <span class="token keyword">val</span> subquery <span class="token operator">=</span> SubqueryExec<span class="token punctuation">.</span>createForScalarSubquery<span class="token punctuation">(</span><span class="token string-interpolation"><span class="token id function">s</span><span class="token string">"subquery#</span><span class="token interpolation"><span class="token punctuation">${</span><span class="token expression">exprId<span class="token punctuation">.</span>id</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">,</span> executedPlan<span class="token punctuation">)</span>
+                subqueryMap<span class="token punctuation">.</span>put<span class="token punctuation">(</span>exprId<span class="token punctuation">.</span>id<span class="token punctuation">,</span> subquery<span class="token punctuation">)</span>
+            <span class="token keyword">case</span> expressions<span class="token punctuation">.</span>InSubquery<span class="token punctuation">(</span>_<span class="token punctuation">,</span> ListQuery<span class="token punctuation">(</span>query<span class="token punctuation">,</span> _<span class="token punctuation">,</span> exprId<span class="token punctuation">,</span> _<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token keyword">if</span> <span class="token operator">!</span>subqueryMap<span class="token punctuation">.</span>contains<span class="token punctuation">(</span>exprId<span class="token punctuation">.</span>id<span class="token punctuation">)</span> <span class="token keyword">=></span>
+                <span class="token keyword">val</span> executedPlan <span class="token operator">=</span> compileSubquery<span class="token punctuation">(</span>query<span class="token punctuation">)</span>
+                verifyAdaptivePlan<span class="token punctuation">(</span>executedPlan<span class="token punctuation">,</span> query<span class="token punctuation">)</span>
+                <span class="token keyword">val</span> subquery <span class="token operator">=</span> SubqueryExec<span class="token punctuation">(</span><span class="token string-interpolation"><span class="token id function">s</span><span class="token string">"subquery#</span><span class="token interpolation"><span class="token punctuation">${</span><span class="token expression">exprId<span class="token punctuation">.</span>id</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">,</span> executedPlan<span class="token punctuation">)</span>
+                subqueryMap<span class="token punctuation">.</span>put<span class="token punctuation">(</span>exprId<span class="token punctuation">.</span>id<span class="token punctuation">,</span> subquery<span class="token punctuation">)</span>
+            <span class="token keyword">case</span> _ <span class="token keyword">=></span>
+        <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        subqueryMap<span class="token punctuation">.</span>toMap
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">/**
+  * PlanAdaptiveSubqueries规则递归处理物理执行计划中的ScalarSubquery、InSubquery
+  */</span>
+<span class="token keyword">class</span> PlanAdaptiveSubqueries<span class="token punctuation">(</span>subqueryMap<span class="token operator">:</span> Map<span class="token punctuation">[</span><span class="token builtin">Long</span><span class="token punctuation">,</span> SubqueryExec<span class="token punctuation">]</span><span class="token punctuation">)</span> <span class="token keyword">extends</span> Rule<span class="token punctuation">[</span>SparkPlan<span class="token punctuation">]</span> <span class="token punctuation">{</span>
+
+    <span class="token keyword">def</span> apply<span class="token punctuation">(</span>plan<span class="token operator">:</span> SparkPlan<span class="token punctuation">)</span><span class="token operator">:</span> SparkPlan <span class="token operator">=</span> <span class="token punctuation">{</span>
+        plan<span class="token punctuation">.</span>transformAllExpressions <span class="token punctuation">{</span>
+            <span class="token keyword">case</span> expressions<span class="token punctuation">.</span>ScalarSubquery<span class="token punctuation">(</span>_<span class="token punctuation">,</span> _<span class="token punctuation">,</span> exprId<span class="token punctuation">)</span> <span class="token keyword">=></span>
+                execution<span class="token punctuation">.</span>ScalarSubquery<span class="token punctuation">(</span>subqueryMap<span class="token punctuation">(</span>exprId<span class="token punctuation">.</span>id<span class="token punctuation">)</span><span class="token punctuation">,</span> exprId<span class="token punctuation">)</span>
+            <span class="token keyword">case</span> expressions<span class="token punctuation">.</span>InSubquery<span class="token punctuation">(</span>values<span class="token punctuation">,</span> ListQuery<span class="token punctuation">(</span>_<span class="token punctuation">,</span> _<span class="token punctuation">,</span> exprId<span class="token punctuation">,</span> _<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token keyword">=></span>
+                <span class="token keyword">val</span> expr <span class="token operator">=</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>values<span class="token punctuation">.</span>length <span class="token operator">==</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                    values<span class="token punctuation">.</span>head
+                <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span>
+                    CreateNamedStruct<span class="token punctuation">(</span>values<span class="token punctuation">.</span>zipWithIndex<span class="token punctuation">.</span>flatMap <span class="token punctuation">{</span> <span class="token keyword">case</span> <span class="token punctuation">(</span>v<span class="token punctuation">,</span> index<span class="token punctuation">)</span> <span class="token keyword">=></span> Seq<span class="token punctuation">(</span>Literal<span class="token punctuation">(</span><span class="token string-interpolation"><span class="token id function">s</span><span class="token string">"col_</span><span class="token interpolation"><span class="token punctuation">$</span><span class="token expression">index</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">,</span> v<span class="token punctuation">)</span> <span class="token punctuation">}</span><span class="token punctuation">)</span>
+                <span class="token punctuation">}</span>
+                InSubqueryExec<span class="token punctuation">(</span>expr<span class="token punctuation">,</span> subqueryMap<span class="token punctuation">(</span>exprId<span class="token punctuation">.</span>id<span class="token punctuation">)</span><span class="token punctuation">,</span> exprId<span class="token punctuation">)</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">class</span> AdaptiveSparkPlanExec<span class="token punctuation">(</span>inputPlan<span class="token operator">:</span> SparkPlan<span class="token punctuation">,</span> context<span class="token operator">:</span> AdaptiveExecutionContext<span class="token punctuation">,</span> preprocessingRules<span class="token operator">:</span> Seq<span class="token punctuation">[</span>Rule<span class="token punctuation">[</span>SparkPlan<span class="token punctuation">]</span><span class="token punctuation">]</span><span class="token punctuation">,</span> isSubquery<span class="token operator">:</span> <span class="token builtin">Boolean</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+
+    <span class="token keyword">def</span> doExecute<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">:</span> RDD<span class="token punctuation">[</span>InternalRow<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">{</span>
+        <span class="token comment">// 获取最终的物理执行计划并执行</span>
+        <span class="token keyword">val</span> rdd <span class="token operator">=</span> getFinalPhysicalPlan<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>execute<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        finalPlanUpdate
+        rdd
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/**
+      * 将Broadcast或Shuffle作为QeuryStage的划分，当一个QueryStageExec完成后就会更新CreateStageResult，同时统计数据，然后创建一个更优的物理执行计划来更新当前的物理执行计划
+      */</span>
+    <span class="token keyword">def</span> getFinalPhysicalPlan<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">:</span> SparkPlan <span class="token operator">=</span> lock<span class="token punctuation">.</span>synchronized <span class="token punctuation">{</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>isFinalPlan<span class="token punctuation">)</span> <span class="token keyword">return</span> currentPhysicalPlan
+
+        <span class="token keyword">val</span> executionId <span class="token operator">=</span> getExecutionId
+        <span class="token comment">// 通过物理执行计划的logicalLink获取其关联的逻辑执行计划</span>
+        <span class="token keyword">var</span> currentLogicalPlan <span class="token operator">=</span> currentPhysicalPlan<span class="token punctuation">.</span>logicalLink<span class="token punctuation">.</span>get
+        <span class="token comment">// 将Exchange节点替换为QueryStage</span>
+        <span class="token keyword">var</span> result <span class="token operator">=</span> createQueryStages<span class="token punctuation">(</span>currentPhysicalPlan<span class="token punctuation">)</span>
+        <span class="token keyword">val</span> events <span class="token operator">=</span> <span class="token keyword">new</span> LinkedBlockingQueue<span class="token punctuation">[</span>StageMaterializationEvent<span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token keyword">val</span> errors <span class="token operator">=</span> <span class="token keyword">new</span> mutable<span class="token punctuation">.</span>ArrayBuffer<span class="token punctuation">[</span>Throwable<span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token keyword">var</span> stagesToReplace <span class="token operator">=</span> Seq<span class="token punctuation">.</span>empty<span class="token punctuation">[</span>QueryStageExec<span class="token punctuation">]</span>
+        <span class="token comment">// 检查是否所有子阶段都已物化</span>
+        <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token operator">!</span>result<span class="token punctuation">.</span>allChildStagesMaterialized<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+            currentPhysicalPlan <span class="token operator">=</span> result<span class="token punctuation">.</span>newPlan
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>result<span class="token punctuation">.</span>newStages<span class="token punctuation">.</span>nonEmpty<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                <span class="token comment">// 通知监听器物理计划已经变更</span>
+                stagesToReplace <span class="token operator">=</span> result<span class="token punctuation">.</span>newStages <span class="token operator">++</span> stagesToReplace
+                executionId<span class="token punctuation">.</span>foreach<span class="token punctuation">(</span>onUpdatePlan<span class="token punctuation">(</span>_<span class="token punctuation">,</span> result<span class="token punctuation">.</span>newStages<span class="token punctuation">.</span>map<span class="token punctuation">(</span>_<span class="token punctuation">.</span>plan<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+
+                <span class="token comment">// 开始物化所有新QueryStage</span>
+                result<span class="token punctuation">.</span>newStages<span class="token punctuation">.</span>foreach <span class="token punctuation">{</span> stage <span class="token keyword">=></span>
+                    stage<span class="token punctuation">.</span>materialize<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>onComplete <span class="token punctuation">{</span> res <span class="token keyword">=></span>
+                        <span class="token keyword">if</span> <span class="token punctuation">(</span>res<span class="token punctuation">.</span>isSuccess<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                            events<span class="token punctuation">.</span>offer<span class="token punctuation">(</span>StageSuccess<span class="token punctuation">(</span>stage<span class="token punctuation">,</span> res<span class="token punctuation">.</span>get<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span>
+                            events<span class="token punctuation">.</span>offer<span class="token punctuation">(</span>StageFailure<span class="token punctuation">(</span>stage<span class="token punctuation">,</span> res<span class="token punctuation">.</span>failed<span class="token punctuation">.</span>get<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">}</span>
+                    <span class="token punctuation">}</span><span class="token punctuation">(</span>AdaptiveSparkPlanExec<span class="token punctuation">.</span>executionContext<span class="token punctuation">)</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token comment">// 等待下一个完成的QueryStage，此时将有新的统计数据可用并可能创建新阶段</span>
+            <span class="token keyword">val</span> nextMsg <span class="token operator">=</span> events<span class="token punctuation">.</span>take<span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token keyword">val</span> rem <span class="token operator">=</span> <span class="token keyword">new</span> util<span class="token punctuation">.</span>ArrayList<span class="token punctuation">[</span>StageMaterializationEvent<span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            events<span class="token punctuation">.</span>drainTo<span class="token punctuation">(</span>rem<span class="token punctuation">)</span>
+            <span class="token punctuation">(</span>Seq<span class="token punctuation">(</span>nextMsg<span class="token punctuation">)</span> <span class="token operator">++</span> rem<span class="token punctuation">.</span>asScala<span class="token punctuation">)</span><span class="token punctuation">.</span>foreach <span class="token punctuation">{</span>
+                <span class="token keyword">case</span> StageSuccess<span class="token punctuation">(</span>stage<span class="token punctuation">,</span> res<span class="token punctuation">)</span> <span class="token keyword">=></span>
+                    stage<span class="token punctuation">.</span>resultOption<span class="token punctuation">.</span>set<span class="token punctuation">(</span>Some<span class="token punctuation">(</span>res<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token keyword">case</span> StageFailure<span class="token punctuation">(</span>stage<span class="token punctuation">,</span> ex<span class="token punctuation">)</span> <span class="token keyword">=></span>
+                    errors<span class="token punctuation">.</span>append<span class="token punctuation">(</span>ex<span class="token punctuation">)</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token comment">// 尝试重新优化和重新生成计划。如果新计划的成本小于等于当前计划就采用它</span>
+            <span class="token comment">// 通过replaceWithQueryStagesInLogicalPlan方法将逻辑执行计划中的所有QueryStage替换为LogicalQueryStage（LogicalQueryStage是QueryStageExec的逻辑执行计划包装）</span>
+            <span class="token keyword">val</span> logicalPlan <span class="token operator">=</span> replaceWithQueryStagesInLogicalPlan<span class="token punctuation">(</span>currentLogicalPlan<span class="token punctuation">,</span> stagesToReplace<span class="token punctuation">)</span>
+            <span class="token comment">// 转换为logicalQueryStage后有了新的统计数据可用，然后调用reOptimize尝试重新优化，最终调用optimizer.execute(logicalPlan)方法执行</span>
+            <span class="token comment">// 目前支持以下几种逻辑优化：</span>
+            <span class="token comment">// + Propagate Empty Relations：AQEPropagateEmptyRelation、ConvertToLocalRelation、UpdateAttributeNullability</span>
+            <span class="token comment">// + Dynamic Join Selection：DynamicJoinSelection</span>
+            <span class="token keyword">val</span> <span class="token punctuation">(</span>newPhysicalPlan<span class="token punctuation">,</span> newLogicalPlan<span class="token punctuation">)</span> <span class="token operator">=</span> reOptimize<span class="token punctuation">(</span>logicalPlan<span class="token punctuation">)</span>
+            <span class="token keyword">val</span> origCost <span class="token operator">=</span> costEvaluator<span class="token punctuation">.</span>evaluateCost<span class="token punctuation">(</span>currentPhysicalPlan<span class="token punctuation">)</span>
+            <span class="token keyword">val</span> newCost <span class="token operator">=</span> costEvaluator<span class="token punctuation">.</span>evaluateCost<span class="token punctuation">(</span>newPhysicalPlan<span class="token punctuation">)</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>newCost <span class="token operator">&lt;</span> origCost <span class="token operator">||</span> <span class="token punctuation">(</span>newCost <span class="token operator">==</span> origCost <span class="token operator">&amp;&amp;</span> currentPhysicalPlan <span class="token operator">!=</span> newPhysicalPlan<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                cleanUpTempTags<span class="token punctuation">(</span>newPhysicalPlan<span class="token punctuation">)</span>
+                currentPhysicalPlan <span class="token operator">=</span> newPhysicalPlan
+                currentLogicalPlan <span class="token operator">=</span> newLogicalPlan
+                stagesToReplace <span class="token operator">=</span> Seq<span class="token punctuation">.</span>empty<span class="token punctuation">[</span>QueryStageExec<span class="token punctuation">]</span>
+            <span class="token punctuation">}</span>
+            <span class="token comment">// Now that some stages have finished, we can try creating new stages.</span>
+            <span class="token comment">// 一些阶段已经结束，可以创建新的阶段</span>
+            result <span class="token operator">=</span> createQueryStages<span class="token punctuation">(</span>currentPhysicalPlan<span class="token punctuation">)</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">// 所有子阶段都物化后，进行物理计划优化（ReuseAdaptiveSubquery、CoalesceShufflePartitions、OptimizeSkewedJoin、OptimizeLocalShuffleReader）生成最终计划</span>
+        currentPhysicalPlan <span class="token operator">=</span> applyPhysicalRules<span class="token punctuation">(</span>result<span class="token punctuation">.</span>newPlan<span class="token punctuation">,</span> finalStageOptimizerRules<span class="token punctuation">,</span> Some<span class="token punctuation">(</span><span class="token punctuation">(</span>planChangeLogger<span class="token punctuation">,</span> <span class="token string">"AQE Final Query Stage Optimization"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        isFinalPlan <span class="token operator">=</span> <span class="token boolean">true</span>
+        executionId<span class="token punctuation">.</span>foreach<span class="token punctuation">(</span>onUpdatePlan<span class="token punctuation">(</span>_<span class="token punctuation">,</span> Seq<span class="token punctuation">(</span>currentPhysicalPlan<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        currentPhysicalPlan
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/** 递归调用createQueryStage来从下到上遍历物理执行计划，如果当前节点为Exchange并且其所有子阶段都已物化，则创建一个新的QueryStage（或复用已存在的）
+      * CreateStageResult作为createQueryStages的返回类型，包含以下信息：
+      * + 替换为QueryStageExec的新计划
+      * + 所有子阶段是否全部物化
+      * + 一组已经创建的QueryStage
+      */</span>
+<span class="token keyword">def</span> createQueryStages<span class="token punctuation">(</span>plan<span class="token operator">:</span> SparkPlan<span class="token punctuation">)</span><span class="token operator">:</span> CreateStageResult <span class="token operator">=</span> plan <span class="token keyword">match</span> <span class="token punctuation">{</span>
+    <span class="token keyword">case</span> e<span class="token operator">:</span> Exchange <span class="token keyword">=></span>
+        <span class="token comment">// 对于Exchange节点，如果开启了Exchange复用（配置项spark.sql.exchange.reuse为true）并且已经存在相应的Stage，则直接复用Stage封装返回CreateStatgeResult</span>
+        <span class="token comment">// 否则，从下向上递归调用createQeuryStage，将Broadcast转换为BroadcastQueryStageExec、Shuffle转换为ShuffleQueryStageExec，并封装为CreateStageResult</span>
+        context<span class="token punctuation">.</span>stageCache<span class="token punctuation">.</span>get<span class="token punctuation">(</span>e<span class="token punctuation">.</span>canonicalized<span class="token punctuation">)</span> <span class="token keyword">match</span> <span class="token punctuation">{</span>
+            <span class="token keyword">case</span> Some<span class="token punctuation">(</span>existingStage<span class="token punctuation">)</span> <span class="token keyword">if</span> conf<span class="token punctuation">.</span>exchangeReuseEnabled <span class="token keyword">=></span>
+                <span class="token keyword">val</span> stage <span class="token operator">=</span> reuseQueryStage<span class="token punctuation">(</span>existingStage<span class="token punctuation">,</span> e<span class="token punctuation">)</span>
+                <span class="token keyword">val</span> isMaterialized <span class="token operator">=</span> stage<span class="token punctuation">.</span>resultOption<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>isDefined
+                CreateStageResult<span class="token punctuation">(</span>newPlan <span class="token operator">=</span> stage<span class="token punctuation">,</span> allChildStagesMaterialized <span class="token operator">=</span> isMaterialized<span class="token punctuation">,</span> newStages <span class="token operator">=</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>isMaterialized<span class="token punctuation">)</span> Seq<span class="token punctuation">.</span>empty <span class="token keyword">else</span> Seq<span class="token punctuation">(</span>stage<span class="token punctuation">)</span><span class="token punctuation">)</span>
+
+            <span class="token keyword">case</span> _ <span class="token keyword">=></span>
+                <span class="token keyword">val</span> result <span class="token operator">=</span> createQueryStages<span class="token punctuation">(</span>e<span class="token punctuation">.</span>child<span class="token punctuation">)</span>
+                <span class="token keyword">val</span> newPlan <span class="token operator">=</span> e<span class="token punctuation">.</span>withNewChildren<span class="token punctuation">(</span>Seq<span class="token punctuation">(</span>result<span class="token punctuation">.</span>newPlan<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span>asInstanceOf<span class="token punctuation">[</span>Exchange<span class="token punctuation">]</span>
+                <span class="token comment">// 如果所有子阶段都已物化，则创建QueryStage</span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>result<span class="token punctuation">.</span>allChildStagesMaterialized<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                    <span class="token keyword">var</span> newStage <span class="token operator">=</span> newQueryStage<span class="token punctuation">(</span>newPlan<span class="token punctuation">)</span>
+                    <span class="token comment">// 开启Exchange复用时，如果stageCache中已存在对应Stage，则直接复用Stage，否则，更新stageCache</span>
+                    <span class="token keyword">if</span> <span class="token punctuation">(</span>conf<span class="token punctuation">.</span>exchangeReuseEnabled<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                        <span class="token keyword">val</span> queryStage <span class="token operator">=</span> context<span class="token punctuation">.</span>stageCache<span class="token punctuation">.</span>getOrElseUpdate<span class="token punctuation">(</span>newStage<span class="token punctuation">.</span>plan<span class="token punctuation">.</span>canonicalized<span class="token punctuation">,</span> newStage<span class="token punctuation">)</span>
+                        <span class="token keyword">if</span> <span class="token punctuation">(</span>queryStage<span class="token punctuation">.</span>ne<span class="token punctuation">(</span>newStage<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                            newStage <span class="token operator">=</span> reuseQueryStage<span class="token punctuation">(</span>queryStage<span class="token punctuation">,</span> e<span class="token punctuation">)</span>
+                        <span class="token punctuation">}</span>
+                    <span class="token punctuation">}</span>
+                    <span class="token keyword">val</span> isMaterialized <span class="token operator">=</span> newStage<span class="token punctuation">.</span>resultOption<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>isDefined
+                    CreateStageResult<span class="token punctuation">(</span>newPlan <span class="token operator">=</span> newStage<span class="token punctuation">,</span> allChildStagesMaterialized <span class="token operator">=</span> isMaterialized<span class="token punctuation">,</span> newStages <span class="token operator">=</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>isMaterialized<span class="token punctuation">)</span> Seq<span class="token punctuation">.</span>empty <span class="token keyword">else</span> Seq<span class="token punctuation">(</span>newStage<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span>
+                    CreateStageResult<span class="token punctuation">(</span>newPlan <span class="token operator">=</span> newPlan<span class="token punctuation">,</span> allChildStagesMaterialized <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">,</span> newStages <span class="token operator">=</span> result<span class="token punctuation">.</span>newStages<span class="token punctuation">)</span>
+                <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+        <span class="token comment">// 对于QueryStageExec节点，直接封装为CreateStageResult返回</span>
+        <span class="token keyword">case</span> q<span class="token operator">:</span> QueryStageExec <span class="token keyword">=></span>
+            CreateStageResult<span class="token punctuation">(</span>newPlan <span class="token operator">=</span> q<span class="token punctuation">,</span> allChildStagesMaterialized <span class="token operator">=</span> q<span class="token punctuation">.</span>resultOption<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>isDefined<span class="token punctuation">,</span> newStages <span class="token operator">=</span> Seq<span class="token punctuation">.</span>empty<span class="token punctuation">)</span>
+        <span class="token comment">// 对于其余类型节点，对其直接子节点应用CreateStageResult</span>
+        <span class="token keyword">case</span> _ <span class="token keyword">=></span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>plan<span class="token punctuation">.</span>children<span class="token punctuation">.</span>isEmpty<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+                CreateStageResult<span class="token punctuation">(</span>newPlan <span class="token operator">=</span> plan<span class="token punctuation">,</span> allChildStagesMaterialized <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">,</span> newStages <span class="token operator">=</span> Seq<span class="token punctuation">.</span>empty<span class="token punctuation">)</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span>
+                <span class="token keyword">val</span> results <span class="token operator">=</span> plan<span class="token punctuation">.</span>children<span class="token punctuation">.</span>map<span class="token punctuation">(</span>createQueryStages<span class="token punctuation">)</span>
+                CreateStageResult<span class="token punctuation">(</span>newPlan <span class="token operator">=</span> plan<span class="token punctuation">.</span>withNewChildren<span class="token punctuation">(</span>results<span class="token punctuation">.</span>map<span class="token punctuation">(</span>_<span class="token punctuation">.</span>newPlan<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">,</span> allChildStagesMaterialized <span class="token operator">=</span> results<span class="token punctuation">.</span>forall<span class="token punctuation">(</span>_<span class="token punctuation">.</span>allChildStagesMaterialized<span class="token punctuation">)</span><span class="token punctuation">,</span> newStages <span class="token operator">=</span> results<span class="token punctuation">.</span>flatMap<span class="token punctuation">(</span>_<span class="token punctuation">.</span>newStages<span class="token punctuation">)</span><span class="token punctuation">)</span>
+            <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/** 创建QueryStage，QeuryStageExec是物理执行计划的独立子图，在继续执行物理执行计划的其他算子之前，将物化其输出，将输出的统计信息用于优化后续阶段
+      * 
+      * 有两种类型的QueryStageExec可以物化，用于AQE后续优化
+      * + ShuffleQueryStageExec：该阶段将其输出物化为Shuffle文件，Spark启动另一个作业来执行后续阶段
+      * + BroadcastQueryStageExec：该阶段将其输出物化为Driver JVM中的一个数组，Spark执行后续阶段前先广播数组
+      */</span>
+    <span class="token keyword">def</span> newQueryStage<span class="token punctuation">(</span>e<span class="token operator">:</span> Exchange<span class="token punctuation">)</span><span class="token operator">:</span> QueryStageExec <span class="token operator">=</span> <span class="token punctuation">{</span>
+        <span class="token keyword">val</span> optimizedPlan <span class="token operator">=</span> applyPhysicalRules<span class="token punctuation">(</span>e<span class="token punctuation">.</span>child<span class="token punctuation">,</span> queryStageOptimizerRules<span class="token punctuation">,</span> Some<span class="token punctuation">(</span><span class="token punctuation">(</span>planChangeLogger<span class="token punctuation">,</span> <span class="token string">"AQE Query Stage Optimization"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token keyword">val</span> queryStage <span class="token operator">=</span> e <span class="token keyword">match</span> <span class="token punctuation">{</span>
+            <span class="token keyword">case</span> s<span class="token operator">:</span> ShuffleExchangeLike <span class="token keyword">=></span>
+                <span class="token keyword">val</span> newShuffle <span class="token operator">=</span> applyPhysicalRules<span class="token punctuation">(</span>s<span class="token punctuation">.</span>withNewChildren<span class="token punctuation">(</span>Seq<span class="token punctuation">(</span>optimizedPlan<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">,</span> postStageCreationRules<span class="token punctuation">,</span> Some<span class="token punctuation">(</span><span class="token punctuation">(</span>planChangeLogger<span class="token punctuation">,</span> <span class="token string">"AQE Post Stage Creation"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                ShuffleQueryStageExec<span class="token punctuation">(</span>currentStageId<span class="token punctuation">,</span> newShuffle<span class="token punctuation">)</span>
+            <span class="token keyword">case</span> b<span class="token operator">:</span> BroadcastExchangeLike <span class="token keyword">=></span>
+                <span class="token keyword">val</span> newBroadcast <span class="token operator">=</span> applyPhysicalRules<span class="token punctuation">(</span>b<span class="token punctuation">.</span>withNewChildren<span class="token punctuation">(</span>Seq<span class="token punctuation">(</span>optimizedPlan<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">,</span> postStageCreationRules<span class="token punctuation">,</span> Some<span class="token punctuation">(</span><span class="token punctuation">(</span>planChangeLogger<span class="token punctuation">,</span> <span class="token string">"AQE Post Stage Creation"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                BroadcastQueryStageExec<span class="token punctuation">(</span>currentStageId<span class="token punctuation">,</span> newBroadcast<span class="token punctuation">)</span>
+        <span class="token punctuation">}</span>
+        currentStageId <span class="token operator">+=</span> <span class="token number">1</span>
+        setLogicalLinkForNewQueryStage<span class="token punctuation">(</span>queryStage<span class="token punctuation">,</span> e<span class="token punctuation">)</span>
+        queryStage
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">def</span> reOptimize<span class="token punctuation">(</span>logicalPlan<span class="token operator">:</span> LogicalPlan<span class="token punctuation">)</span><span class="token operator">:</span> <span class="token punctuation">(</span>SparkPlan<span class="token punctuation">,</span> LogicalPlan<span class="token punctuation">)</span> <span class="token operator">=</span> <span class="token punctuation">{</span>
+        logicalPlan<span class="token punctuation">.</span>invalidateStatsCache<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token keyword">val</span> optimized <span class="token operator">=</span> optimizer<span class="token punctuation">.</span>execute<span class="token punctuation">(</span>logicalPlan<span class="token punctuation">)</span>
+        <span class="token keyword">val</span> sparkPlan <span class="token operator">=</span> context<span class="token punctuation">.</span>session<span class="token punctuation">.</span>sessionState<span class="token punctuation">.</span>planner<span class="token punctuation">.</span>plan<span class="token punctuation">(</span>ReturnAnswer<span class="token punctuation">(</span>optimized<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span>next<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token keyword">val</span> newPlan <span class="token operator">=</span> applyPhysicalRules<span class="token punctuation">(</span>sparkPlan<span class="token punctuation">,</span> preprocessingRules <span class="token operator">++</span> queryStagePreparationRules<span class="token punctuation">,</span> Some<span class="token punctuation">(</span><span class="token punctuation">(</span>planChangeLogger<span class="token punctuation">,</span> <span class="token string">"AQE Replanning"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token punctuation">(</span>newPlan<span class="token punctuation">,</span> optimized<span class="token punctuation">)</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">// The partitioning of the query output depends on the shuffle(s) in the final stage. If the</span>
+    <span class="token comment">// original plan contains a repartition operator, we need to preserve the specified partitioning,</span>
+    <span class="token comment">// whether or not the repartition-introduced shuffle is optimized out because of an underlying</span>
+    <span class="token comment">// shuffle of the same partitioning. Thus, we need to exclude some `CustomShuffleReaderRule`s</span>
+    <span class="token comment">// from the final stage, depending on the presence and properties of repartition operators</span>
+    <span class="token keyword">def</span> finalStageOptimizerRules<span class="token operator">:</span> Seq<span class="token punctuation">[</span>Rule<span class="token punctuation">[</span>SparkPlan<span class="token punctuation">]</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">{</span>
+        <span class="token keyword">val</span> origins <span class="token operator">=</span> inputPlan<span class="token punctuation">.</span>collect <span class="token punctuation">{</span>
+            <span class="token keyword">case</span> s<span class="token operator">:</span> ShuffleExchangeLike <span class="token keyword">=></span> s<span class="token punctuation">.</span>shuffleOrigin
+        <span class="token punctuation">}</span>
+        <span class="token keyword">val</span> allRules <span class="token operator">=</span> queryStageOptimizerRules <span class="token operator">++</span> postStageCreationRules
+        allRules<span class="token punctuation">.</span>filter <span class="token punctuation">{</span>
+            <span class="token keyword">case</span> c<span class="token operator">:</span> CustomShuffleReaderRule <span class="token keyword">=></span> origins<span class="token punctuation">.</span>forall<span class="token punctuation">(</span>c<span class="token punctuation">.</span>supportedShuffleOrigins<span class="token punctuation">.</span>contains<span class="token punctuation">)</span>
+            <span class="token keyword">case</span> _ <span class="token keyword">=></span> <span class="token boolean">true</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">// 新阶段执行前应用的一组物理计划优化规则，这些优化独立于阶段</span>
+    <span class="token keyword">val</span> queryStageOptimizerRules<span class="token operator">:</span> Seq<span class="token punctuation">[</span>Rule<span class="token punctuation">[</span>SparkPlan<span class="token punctuation">]</span><span class="token punctuation">]</span> <span class="token operator">=</span> Seq<span class="token punctuation">(</span>
+        ReuseAdaptiveSubquery<span class="token punctuation">(</span>context<span class="token punctuation">.</span>subqueryCache<span class="token punctuation">)</span><span class="token punctuation">,</span>
+        CoalesceShufflePartitions<span class="token punctuation">(</span>context<span class="token punctuation">.</span>session<span class="token punctuation">)</span><span class="token punctuation">,</span>
+        OptimizeSkewedJoin<span class="token punctuation">,</span>
+        OptimizeLocalShuffleReader
+    <span class="token punctuation">)</span>
+
+    <span class="token comment">// 新阶段创建后应用的一组物理计划优化规则</span>
+    <span class="token keyword">val</span> postStageCreationRules <span class="token operator">=</span> Seq<span class="token punctuation">(</span>
+        ApplyColumnarRulesAndInsertTransitions<span class="token punctuation">(</span>context<span class="token punctuation">.</span>session<span class="token punctuation">.</span>sessionState<span class="token punctuation">.</span>columnarRules<span class="token punctuation">)</span><span class="token punctuation">,</span>
+        CollapseCodegenStages<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">)</span>
+
+    <span class="token comment">/**
+      * 对物理执行计划应用一组物理算子规则
+      */</span>
+    <span class="token keyword">def</span> applyPhysicalRules<span class="token punctuation">(</span>plan<span class="token operator">:</span> SparkPlan<span class="token punctuation">,</span> rules<span class="token operator">:</span> Seq<span class="token punctuation">[</span>Rule<span class="token punctuation">[</span>SparkPlan<span class="token punctuation">]</span><span class="token punctuation">]</span><span class="token punctuation">,</span> loggerAndBatchName<span class="token operator">:</span> Option<span class="token punctuation">[</span><span class="token punctuation">(</span>PlanChangeLogger<span class="token punctuation">[</span>SparkPlan<span class="token punctuation">]</span><span class="token punctuation">,</span> <span class="token builtin">String</span><span class="token punctuation">)</span><span class="token punctuation">]</span> <span class="token operator">=</span> None<span class="token punctuation">)</span><span class="token operator">:</span> SparkPlan <span class="token operator">=</span> <span class="token punctuation">{</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>loggerAndBatchName<span class="token punctuation">.</span>isEmpty<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+            rules<span class="token punctuation">.</span>foldLeft<span class="token punctuation">(</span>plan<span class="token punctuation">)</span> <span class="token punctuation">{</span> <span class="token keyword">case</span> <span class="token punctuation">(</span>sp<span class="token punctuation">,</span> rule<span class="token punctuation">)</span> <span class="token keyword">=></span> rule<span class="token punctuation">.</span>apply<span class="token punctuation">(</span>sp<span class="token punctuation">)</span> <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span>
+            <span class="token keyword">val</span> <span class="token punctuation">(</span>logger<span class="token punctuation">,</span> batchName<span class="token punctuation">)</span> <span class="token operator">=</span> loggerAndBatchName<span class="token punctuation">.</span>get
+            <span class="token keyword">val</span> newPlan <span class="token operator">=</span> rules<span class="token punctuation">.</span>foldLeft<span class="token punctuation">(</span>plan<span class="token punctuation">)</span> <span class="token punctuation">{</span> <span class="token keyword">case</span> <span class="token punctuation">(</span>sp<span class="token punctuation">,</span> rule<span class="token punctuation">)</span> <span class="token keyword">=></span>
+                <span class="token keyword">val</span> result <span class="token operator">=</span> rule<span class="token punctuation">.</span>apply<span class="token punctuation">(</span>sp<span class="token punctuation">)</span>
+                logger<span class="token punctuation">.</span>logRule<span class="token punctuation">(</span>rule<span class="token punctuation">.</span>ruleName<span class="token punctuation">,</span> sp<span class="token punctuation">,</span> result<span class="token punctuation">)</span>
+                result
+            <span class="token punctuation">}</span>
+            newPlan
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span></code><span aria-hidden="true" class="line-numbers-rows" style="white-space: normal; width: auto; left: 0;"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></pre></div>
 <div class="footnotes">
 <hr>
 <ol>
@@ -1725,13 +2744,18 @@ children <span class="token operator">=</span> children<span class="token punctu
 <li id="fn-25">Spark SQL内置实现的函数、用户自定义函数和Hive中的函数<a href="#fnref-25" class="footnote-backref">↩</a></li>
 <li id="fn-26">Analyzer逻辑算子树的分析过程，Optimizer逻辑算子树的优化过程，物理算子树的生成过程<a href="#fnref-26" class="footnote-backref">↩</a></li>
 <li id="fn-27">CTE对应with语句，在SQL中主要用于子查询模块化<a href="#fnref-27" class="footnote-backref">↩</a></li>
-<li id="fn-28">subqueries仅用于提供查询的视角范围信息，一旦Analyzer阶段结束，该节点就可以被移除<a href="#fnref-28" class="footnote-backref">↩</a></li>
-<li id="fn-29">一个LogicalPlan可能产生多种SparkPlan<a href="#fnref-29" class="footnote-backref">↩</a></li>
-<li id="fn-30">一个逻辑计划可能会对应多个物理计划<a href="#fnref-30" class="footnote-backref">↩</a></li>
-<li id="fn-31">Project节点加上Filter节点<a href="#fnref-31" class="footnote-backref">↩</a></li>
-<li id="fn-32">例如，SortMerge类型的Join节点中requiredChildDistribution列表为<code class="language-text">[ClusteredDistribution(leftKeys), ClusteredDistribution(rightKeys)]</code>，假设两个子节点的Partitioning都无法输出该数据分布，那么就会添加两个ShuffleExchange节点<a href="#fnref-32" class="footnote-backref">↩</a></li>
-<li id="fn-33">例如，SortMerge类型的Join节点就需要两个子节点的Hash计算方式相同，如果所有的子节点outputPartitioning能够保证由最大分区数目创建新的Partitioning，则子节点输出的数据并不需要重新Shuffle，只需要使用已有的outputPartitioning方式即可，没有必要创建新的Exchange节点；否则，至少有一个子节点的输出数据需要重新进行Shuffle操作，重分区的数目（NumPartitions）根据是否所有的子节点输出都需要Shuffle来判断，若是，则采用默认的Shuffle分区配置数目；否则，取子节点中最大的分区数目<a href="#fnref-33" class="footnote-backref">↩</a></li>
-<li id="fn-34">仅适用于Shuffle Sort Merge Join<a href="#fnref-34" class="footnote-backref">↩</a></li>
+<li id="fn-28">ExperimentalMethods的extraOptimizations队列默认为空，用户只需要继承Rule<code class="language-text">[LogicalPlan]</code>虚类，实现相应的转化逻辑就可以注册到优化规则队列中应用执行<a href="#fnref-28" class="footnote-backref">↩</a></li>
+<li id="fn-29">对于逻辑算子树中涉及某些常量的节点，可以在实际执行之前就完成静态处理<a href="#fnref-29" class="footnote-backref">↩</a></li>
+<li id="fn-30">将逻辑算子树中能够进行组合的算子尽量整合在一起，避免多次计算，以提高性能，主要针对的是重分区（repartition）算子、投影（Project）算子、过滤（Filter）算子、Window算子、Limit算子和Union算子<a href="#fnref-30" class="footnote-backref">↩</a></li>
+<li id="fn-31">主要是将逻辑算子树中上层的算子节点尽量下推，使其靠近叶子节点<br>能够在不同程度上减少后续处理的数据量甚至简化后续的处理逻辑<a href="#fnref-31" class="footnote-backref">↩</a></li>
+<li id="fn-32">在SQL语句中，某些查询算子可以直接改写为已有的算子<a href="#fnref-32" class="footnote-backref">↩</a></li>
+<li id="fn-33">subqueries仅用于提供查询的视角范围信息，一旦Analyzer阶段结束，该节点就可以被移除<a href="#fnref-33" class="footnote-backref">↩</a></li>
+<li id="fn-34">一个LogicalPlan可能产生多种SparkPlan<a href="#fnref-34" class="footnote-backref">↩</a></li>
+<li id="fn-35">一个逻辑计划可能会对应多个物理计划<a href="#fnref-35" class="footnote-backref">↩</a></li>
+<li id="fn-36">Project节点加上Filter节点<a href="#fnref-36" class="footnote-backref">↩</a></li>
+<li id="fn-37">例如，SortMerge类型的Join节点中requiredChildDistribution列表为<code class="language-text">[ClusteredDistribution(leftKeys), ClusteredDistribution(rightKeys)]</code>，假设两个子节点的Partitioning都无法输出该数据分布，那么就会添加两个ShuffleExchange节点<a href="#fnref-37" class="footnote-backref">↩</a></li>
+<li id="fn-38">例如，SortMerge类型的Join节点就需要两个子节点的Hash计算方式相同，如果所有的子节点outputPartitioning能够保证由最大分区数目创建新的Partitioning，则子节点输出的数据并不需要重新Shuffle，只需要使用已有的outputPartitioning方式即可，没有必要创建新的Exchange节点；否则，至少有一个子节点的输出数据需要重新进行Shuffle操作，重分区的数目（NumPartitions）根据是否所有的子节点输出都需要Shuffle来判断，若是，则采用默认的Shuffle分区配置数目；否则，取子节点中最大的分区数目<a href="#fnref-38" class="footnote-backref">↩</a></li>
+<li id="fn-39">仅适用于Shuffle Sort Merge Join<a href="#fnref-39" class="footnote-backref">↩</a></li>
 </ol>
 </div></section><hr/><footer><div class="bio"><div data-gatsby-image-wrapper="" style="width:50px;height:50px" class="gatsby-image-wrapper bio-avatar"><div aria-hidden="true" data-placeholder-image="" style="opacity:1;transition:opacity 500ms linear;background-color:#080808;width:50px;height:50px;position:relative"></div><picture><source type="image/avif" data-srcset="/static/0e268a0c61e073203f25a3c89d8e0fbf/d4bf4/dd.avif 50w,/static/0e268a0c61e073203f25a3c89d8e0fbf/ee81f/dd.avif 100w" sizes="50px"/><source type="image/webp" data-srcset="/static/0e268a0c61e073203f25a3c89d8e0fbf/3faea/dd.webp 50w,/static/0e268a0c61e073203f25a3c89d8e0fbf/6a679/dd.webp 100w" sizes="50px"/><img data-gatsby-image-ssr="" layout="fixed" data-main-image="" style="opacity:0" sizes="50px" decoding="async" loading="lazy" data-src="/static/0e268a0c61e073203f25a3c89d8e0fbf/e5610/dd.png" data-srcset="/static/0e268a0c61e073203f25a3c89d8e0fbf/e5610/dd.png 50w,/static/0e268a0c61e073203f25a3c89d8e0fbf/e9b55/dd.png 100w" alt="Profile picture"/></picture><noscript><picture><source type="image/avif" srcSet="/static/0e268a0c61e073203f25a3c89d8e0fbf/d4bf4/dd.avif 50w,/static/0e268a0c61e073203f25a3c89d8e0fbf/ee81f/dd.avif 100w" sizes="50px"/><source type="image/webp" srcSet="/static/0e268a0c61e073203f25a3c89d8e0fbf/3faea/dd.webp 50w,/static/0e268a0c61e073203f25a3c89d8e0fbf/6a679/dd.webp 100w" sizes="50px"/><img data-gatsby-image-ssr="" layout="fixed" data-main-image="" style="opacity:0" sizes="50px" decoding="async" loading="lazy" src="/static/0e268a0c61e073203f25a3c89d8e0fbf/e5610/dd.png" srcSet="/static/0e268a0c61e073203f25a3c89d8e0fbf/e5610/dd.png 50w,/static/0e268a0c61e073203f25a3c89d8e0fbf/e9b55/dd.png 100w" alt="Profile picture"/></picture></noscript><script type="module">const t="undefined"!=typeof HTMLImageElement&&"loading"in HTMLImageElement.prototype;if(t){const t=document.querySelectorAll("img[data-main-image]");for(let e of t){e.dataset.src&&(e.setAttribute("src",e.dataset.src),e.removeAttribute("data-src")),e.dataset.srcset&&(e.setAttribute("srcset",e.dataset.srcset),e.removeAttribute("data-srcset"));const t=e.parentNode.querySelectorAll("source[data-srcset]");for(let e of t)e.setAttribute("srcset",e.dataset.srcset),e.removeAttribute("data-srcset");e.complete&&(e.style.opacity=1,e.parentNode.parentNode.querySelector("[data-placeholder-image]").style.opacity=0)}}</script></div><p>Written by <strong>luuua</strong> <br/> <!-- -->圣人之道,吾性自足,不假外求.</p></div></footer></article><nav class="blog-post-nav"><ul style="display:flex;flex-wrap:wrap;justify-content:space-between;list-style:none;padding:0"><li><a rel="prev" href="/spark API/">← <!-- -->Spark RDD和DataFrame</a></li><li><a rel="next" href="/spark storage/">Spark存储原理<!-- --> →</a></li></ul></nav></main><footer>© <!-- -->2023<!-- -->, Built with<!-- --> <a href="https://www.gatsbyjs.com">Gatsby</a></footer></div></div><div id="gatsby-announcer" style="position:absolute;top:0;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0, 0, 0, 0);white-space:nowrap;border:0" aria-live="assertive" aria-atomic="true"></div></div><script id="gatsby-script-loader">/*<![CDATA[*/window.pagePath="/spark execute/";/*]]>*/</script><!-- slice-start id="_gatsby-scripts-1" -->
           <script
