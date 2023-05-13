@@ -56,8 +56,8 @@ Hadoop RPC主要分为四个部分：
 + 服务器端处理框架：可被抽象为网络I/O模型，描述了客户端与服务器端间信息交互方式，Hadoop RPC采用了基于Reactor设计模式的事件驱动I/O模型
 
 Hadoop RPC（`org.apache.hadoop.ipc.RPC`）对外主要提供了两种接口：
-+ `public static <T> ProtocolProxy <T> getProxy/waitForProxy()`：构造一个客户端代理对象，用于向服务器发送RPC请求
-+ `public static Server RPC.Builder(Configuration).build()`：为某个协议实例构造一个服务器对象，用于处理客户端发送的请求
++ `<T> ProtocolProxy <T> getProxy/waitForProxy()`：构造一个客户端代理对象，用于向服务器发送RPC请求
++ `Server RPC.Builder(Configuration).build()`：为某个协议实例构造一个服务器对象，用于处理客户端发送的请求
 
 Hadoop RPC主要由三个大类组成，即RPC、Client和Server，分别对应对外编程接口、客户端实现和服务器实现。
 
@@ -123,6 +123,8 @@ String echoResult = proxy.echo("result");
 
 YARN将Hadoop RPC中的序列化部分剥离开，集成现有的开源RPC框架^[RPC类变成了一个工厂，它将具体的RPC实现授权给RpcEngine实现类，现有开源RPC类只要实现RpcEngine接口，便可以集成到Hadoop RPC中]，配置项`rpc.engine.{protocol}`用于指定协议{protocol}采用的序列化方式。
 
+<div class="wrapper" block="markdown">
+
 ```plantuml
 @startuml
 !include https://raw.githubusercontent.com/bschwarz/puml-themes/master/themes/sketchy-outline/puml-theme-sketchy-outline.puml
@@ -161,10 +163,14 @@ RpcEngine <|-- ProtobufRpcEngine
 @enduml
 ```
 
-YARN提供的对外类是YarnRPC，只需使用该类便可以构建一个基于Hadoop RPC且采用Protocol Buffers序列化框架的通信协议。YarnRPC是一个抽象类，配置项`yarn.ipc.rpc.class`设置实际的实现，默认值是`org.apache.hadoop.yarn.ipc.HadoopYarnProtoRPC`。HadoopYarnProtoRPC通过RPC工厂生成器（工厂设计模式）RpcFactoryProvider生成客户端工厂（由配置项yarn.ipc.client.factory.class设置，默认值是org.apache.hadoop.yarn.factories.impl.pb.RpcClientFactoryPBImpl）和服务器工厂（由配置项yarn.ipc.server.factory.class设置，默认值是org.apache.hadoop.yarn.factories.impl.pb.RpcServerFactoryPBImpl），以根据通信协议的Protocol Buffers定义生成客户端对象和服务器对象
+</div>
+
+YARN提供的对外类是YarnRPC，只需使用该类便可以构建一个基于Hadoop RPC且采用Protocol Buffers序列化框架的通信协议。YarnRPC是一个抽象类，配置项`yarn.ipc.rpc.class`设置实际的实现，默认值是org.apache.hadoop.yarn.ipc.HadoopYarnProtoRPC。HadoopYarnProtoRPC通过RPC工厂生成器（工厂设计模式）RpcFactoryProvider生成客户端工厂（由配置项yarn.ipc.client.factory.class设置，默认值是org.apache.hadoop.yarn.factories.impl.pb.RpcClientFactoryPBImpl）和服务器工厂（由配置项yarn.ipc.server.factory.class设置，默认值是org.apache.hadoop.yarn.factories.impl.pb.RpcServerFactoryPBImpl），以根据通信协议的Protocol Buffers定义生成客户端对象和服务器对象
 
 + RpcClientFactoryPBImpl：根据通信协议接口及Protocol Buffers定义构造RPC客户端句柄^[RpcClientFactoryPBImpl对通信协议的存放位置和类命名有一定要求，假设通信协议接口Xxx所在Java包名为XxxPackage，则客户端实现代码必须位于Java包XxxPackage.impl.pb.client中（在接口包名后面增加.impl.pb.client），切实现类名为PBClientImplXxx（在接口名前面增加前缀PBClientImpl）]
 + RpcServerFactoryPBImpl：根据通信协议接口及Protocol Buffers定义构造RPC服务器句柄^[对通信协议的存放位置和类命名有一定要求。假设通信协议接口Xxx所在Java包名为XxxPackage，则客户端实现代码必须位于Java包 XxxPackage.impl.pb.server中（在接口包名后面增加.impl.pb.server），且实现类名为PBServiceImplXxx（在接口名前面增加前缀PBServiceImpl）]
+
+<div class="wrapper" block="markdown">
 
 ```plantuml
 @startuml
@@ -223,41 +229,135 @@ RpcClientFactory <|.. RpcClientFactoryPBImpl
 @enduml
 ```
 
+</div>
+
 ## Flink RPC
 
-Flink使用Akka作为Flink自身消息的RPC通信框架。
+Flink基于Akka实现内部各组件（ResourceManager、Dispatcher、JobMaster、TaskExecutor等）间的RPC通信。Akka是一个开发并发、容错和可伸缩应用的框架，是Actor Model的一个实现。在Actor Model中，所有的实体被认为是独立的Actor，Actor和其他Actor通过发送异步消息通信（也可以使用同步模式执行同步操作，但是会限制系统的伸缩性），每个Actor都有一个邮箱（Mailbox），用于存储所收到的消息，另外，每一个Actor维护自身单独的状态。每个Actor是一个单一的线程，不断从其邮箱中拉取消息，并且连续不断地处理，对于已经处理过的消息的结果，Actor可以改变它自身的内部状态，或者发送一个新消息，或者孵化一个新的Actor。
 
-Akka是一个开发并发、容错和可伸缩应用的框架，是Actor模型的一个实现。在Actor模型中，所有的实体被认为是独立的Actor，Actor和其他Actor通过发送异步消息通信（也可以使用同步模式执行同步操作，但是会限制系统的伸缩性），每个Actor都有一个邮箱（Mailbox），用于存储所收到的消息，另外，每一个Actor维护自身单独的状态。每个Actor是一个单一的线程，不断从其邮箱中拉取消息，并且连续不断地处理，对于已经处理过的消息的结果，Actor可以改变它自身的内部状态，或者发送一个新消息，或者孵化一个新的Actor。
+Flink中的RPC实现主要在flink-runtime模块下的org.apache.flink.runtime.rpc包中，主要组件有RpcEndpoint、RpcService、RpcServer、AkkaInvocationHandler、AkkaRpcActor等，RpcEndpoint定义了一个Actor路径；RpcService提供了启动RpcServer、执行代码等方法；RpcServer/AkkaInvocationHandler提供了与Actor通信的接口；AkkaRpcActor为Flink封装的Actor。
+
+### Actor Model
+
+<div class="wrapper" block="markdown">
+
+![Actor Model](imgs/actor_model.png)
+
+</div>
+
+Actor Model是计算机科学领域并行计算的数学模型，定义了一系列系统组件应该如何动作和交互的通用规则，基于通信而非使用关联内存模型的全局状态实现消息传递，是一个通用的并发编程模型，而非某个语言或框架所有。Actor Model的理念非常简单：万物皆Actor。其主要概念包括：Actor（通信的主体）、Message（通信的内容）、Mailbox（单线程先到先处理的消息处理器）
+
+Actor Model将Actor当作通用的并行计算原语：一个Actor对接收到的消息作出响应，本地策略可以创建出更多的参与者或发送更多的消息，同时准备接收下一条消息。Actor状态不能直接读取和修改，方法也不能直接调用，只能通过消息修改自身私有状态（避免锁）。每个Actor存在一个代表本身的地址，只能向该地址发送消息。
+
+Actor由状态（state）、行为（behavior）、邮箱（mailbox）三者组成的：
++ 状态：指Actor对象的变量信息，状态Actor自身管理，避免并发环境下的锁和内存原子性等问题
++ 行为：指Actor中的计算逻辑，通过Actor接收到的消息来改变Actor的状态
++ 邮箱：Actor之间的通信桥梁，邮箱内部通过FIFO消息队列来存储发送发消息，而接收方则从邮箱中获取消息
+
+Actor地址有多种实现方式：
++ 直接物理附着^[将指向Actor对象的地址直接物理地嵌入在组件硬件（如芯片、电路板、芯片载体等）中并通过物理线路直接连接到其他组件的演员对象上]
++ 内存或磁盘地址
++ 网络地址
++ 电子邮件地址
+
+Actor只能向其通过以下方式获得地址的Actor发送消息：
++ 消息中包含地址
++ 接收消息前已经知道的地址
++ 处理消息时创建的Actor
+
+收到消息时，Actor可以有三种行为：
++ 创建有限数量的Actor
++ 向已知地址的Actor发送有限数量的消息
++ 指定下一条消息到来时的行为
+
+Actor Model有两种任务调度方式：
++ 基于线程的调度：为每个Actor分配一个线程，在接收一个消息时，如果当前Actor的邮箱为空则会阻塞当前线程
++ 基于事件的调度：消息到来时才会为Actor分配线程并执行
+
+Actor Model的特点是：
++ Actor之间和内部计算具有固有的并发性
++ 动态创建Actor对象
++ 消息中包含Actor地址
++ 仅通过直接异步消息传递进行交互，并且没有关于消息接收顺序的限制。异步的发送消息是用Actor Model编程的重要特性之一，消息并不是直接发送到一个Actor，而是发送到一个Mailbox中的。这样的设计解耦了Actor之间的关系，每个Actor都以自己的步调运行，且发送消息时不会被堵塞
+
+Actor Model的最根本优势是消息发送者与已经发送的消息解耦，这将支持异步通信和消息传递模式的控制结构。Actor Model主要问题在于难以保证原子性。
 
 ### Akka
 
-Akka系统的核心是ActorSystem和Actor，Actor只能通过`ActorSystem#actorOf`和`ActorContext#actorOf`创建，另外，只能通过Actor引用`ActorRef`来与Actor进行通信。
+ActorSystem是管理Actor生命周期的组件，Actor是负责进行通信的组件。
 
-actor是以一种严格的树形结构样式来创建的，沿着子actor到父actor的监管链，一直到actor系统的根存在一条唯一的actor名字序列，被称为路径。一个actor路径都有一个地址组件（"akka"表示Akka本地协议，"akka.tcp"表示Akka远程协议），描述访问这个actor所需要的协议和位置，之后是从根到指定actor所经过的树节点上actor的名字（以"/"分隔），遵循URI结构标准（`[协议名]://[ActorSystem名称]@[主机名]:[端口]/[路径]`）。在路径树的根上是根监管者，所有其他actor都可以通过它找到，其名字是"/"，在第二个层次上是以下这些：
-+ "/user" 是所有由用户创建的顶级actor的监管者，用`ActorSystem#actorOf`创建的actor在其下
-+ "/system" 是所有由系统创建的顶级actor的监管者
-+ "/deadLetters" 是死信actor，所有发往已经终止或不存在的actor的消息会被重定向到这里
-+ "/temp"是所有系统创建的短时actor的监管者
-+ "/remote" 是一个人造虚拟路径，用来存放所有其监管者是远程actor引用的actor
+在Akka中可以认为Actor是一个容器，包含了状态、行为、邮箱Mailbox、子Actor和监管（Supervisor）策略，这些都封装在ActorRef（Actor的引用，出于与外界隔离的目的，Actor以ActorRef的形式展现给外界，Actor和ActorRef这种划分使得所有操作都能够透明，如重启Actor而不需要更新ActorRef）中，当Actor销毁时这些资源都会释放。另外，只能通过ActorRef来与Actor进行通信。
+
+Actor状态可以是一个明确的状态机、一个计数器、一组监听器和待处理的请求等等。
+
+Actor行为是一个函数，定义了在某个时间点处理对应消息所要采取的行为，每当Actor收到一个消息，它会与Actor的当前行为进行匹配，Actor对象在创建时所定义的初始行为是特殊的，因为Actor重启时会恢复这个初始行为。
+
+邮箱（Mailbox）连接众多Actor。Actor之间并不直接通信，而是通过邮件Mail来互通有无。每个Actor有且仅有一个邮箱，所有发来的消息都在邮箱里按照发送操作的时间顺序排队（Actor分布在不同的线程中，不同的Actor发来的消息在运行时没有一个固定的顺序，同一个Actor发送到相同目标Actor的多个消息会按发送的顺序排队）。Akka有不同的邮箱实现可供选择，默认是FIFO，处理消息的顺序与消息入队列的顺序一致，也可以选择优先邮箱，根据消息优先级将消息放在非队尾的某个指定位置，甚至可能是队列头。
+
+Akka Actor的处理流程：
+1. 创建ActorSystem
+2. 通过ActorSystem创建ActorRef，并将消息发送到ActorRef
+3. ActorRef将消息传递到Dispatcher中
+4. Dispatcher依次将消息发送到Actor邮箱中
+5. Dispatcher将邮箱推送至一个线程中
+6. 邮箱取出一条消息并委派给Actor的receive方法
+
+Akka系统的精髓在于任务被拆开、委托，直到任务小到可以被完整地处理。如果一个Actor对某种状况无法进行处理，它会发送相应的失败消息给它的监管者请求帮助，这样的递归结构使得失败能够在正确的层次得到处理。
+
+设计Akka系统的难度在于如何决定谁应该监管什么，以下是一些指导原则：
++ 如果一个Actor管理另一个Actor所做的工作，如分配一个子任务，那么父Actor应该监督子Actor。因为父Actor知道可能会出现哪些失败情况，以及如何处理它们
++ 如果一个Actor携带着重要数据（即它的状态要尽可能地不被丢失），这个Actor应该将任何可能出现危险的子任务分配给它所监管的子Actor，并酌情处理子任务的失败。根据请求的性质，可能的话最好为每一个请求创建一个子Actor，这样能简化收集回应的状态管理^[这在Erlang中被称为“Error Kernel Pattern”]
++ 如果Actor A需要依赖Actor B才能完成它的任务，A应该观测B的存活状态并对B的终止提醒消息进行响应。这与监管机制不同，因为观测方对监管机制没有影响；需要指出的是，仅仅是功能上的依赖并不足以用来决定是否在树形监管体系中添加子Actor
+
+Actor是以一种严格的树形结构样式来创建的，沿着子Actor到父Actor的监管链，一直到Actor系统的根存在一条唯一的Actor名字序列，被称为路径。Actor路径遵循URI结构标准^[`[协议名]://[ActorSystem名称]@[主机名]:[端口]/[路径]`]，都有一个地址组件^["akka"表示Akka本地协议，"akka.tcp"表示Akka远程协议]描述访问这个Actor所需要的协议和位置，之后是以"/"分隔的从根到指定Actor所经过的树节点上Actor的名字。在路径树的根上是根监管者，所有其他Actor都可以通过它找到，其名字是"/"，在第二个层次上是以下这些：
++ "/user" 是所有由用户创建的顶级Actor的监管者，用`ActorSystem#actorOf()`创建的Actor在其下
++ "/system" 是所有由系统创建的顶级Actor的监管者
++ "/deadLetters" 是死信Actor，所有发往已经终止或不存在的Actor的消息会被重定向到这里
++ "/temp"是所有系统创建的短时Actor的监管者
++ "/remote" 是一个人造虚拟路径，用来存放所有其监管者是远程Actor引用的Actor
 
 Akka有两种核心的异步通信方式：
 + tell方式：表示仅仅使用异步方式给某个Actor发送消息，无须等待Actor的响应结果，并且也不会阻塞后续代码的运行，`ActorRef#tell(message, actorRef)`第一个参数为消息，可以是任何可序列化的数据或对象，第二个参数表示发送者（发送消息的Actor的引用，`ActorRef.noSender()`表示无发送者）
 + ask方式：将返回结果包装在`scala.concurrent.Future`中，然后通过异步回调获取返回结果，用于需要从Actor获取响应结果的场景
 
-### RPC消息类型
+```
+// 1. 构建ActorSystem
+ActorSystem system = ActorSystem.create("sys");
+// 2. 构建Actor,获取该Actor的引用，即ActorRef
+ActorRef helloActor = system.actorOf(Props.create(HelloActor.class), "helloActor");
+// 3. 给helloActor发送消息
+helloActor.tell("hello helloActor", ActorRef.noSender());
+// 4. 关闭ActorSystem
+system.terminate();
 
-1. 握手消息
-    + RemoteHandshakeMessage：与Actor握手消息
-    + HandshakeSuccessMessage：与Actor握手成功消息
-2. Fenced消息：用来防止集群的脑裂（Brain Split）问题，每个TaskManager向JobMaster注册之后，都会拿到当前Leader JobMaster的ID作为Fence Token，其他JobMaster发送的消息因为其JobMaster ID与期望的Fence Token不一样就会被忽略掉
-    + LocalFencedMessage：本地Fence Token消息，同一个JVM内的调用
-    + RemoteFencedMessage：远程Fence Token消息，包括本地JVM和跨节点的JVM调用
-3. 调用消息：
-    + LocalRpcInvocation：本地RpcEndpoint调用消息，同一个JVM内的调用
-    + RemoteRpcInvocation：远程RpcEndpoint调用消息，包括本地不同JVM和跨节点的JVM调用
-4. 执行消息：RunAsync，带有Runnable对象的异步执行请求信息。`RpcEndpoint.runAsync`方法调用`RpcService.runAsync`，然后调用`RpcService.scheduleRunAsync`，`RpcService.scheduleRunAsync`调用`AkkaInvocationHandler.tell`方法发送RunAsync消息
+// 通过Actor路径获取ActorRef
+ActorSelection as = system.actorSelection("/path/to/actor");
+Timeout timeout = new Timeout(Duration.create(2, "seconds"));
+Future<ActorRef> fu = as.resolveOne(timeout);
+fu.onSuccess(
+    new OnSuccess<ActorRef>() {
+        @Override
+        public void onSuccess(ActorRef actor) {
+            System.out.println("actor:" + actor);
+            actor.tell("hello actor", ActorRef.noSender());
+        }
+    },
+    system.dispatcher());
 
-### RPC通信组件
+fu.onFailure(
+    new OnFailure() {
+        @Override
+        public void onFailure(Throwable failure) {
+            System.out.println("failure:" + failure);
+        }
+    },
+    system.dispatcher());
+
+```
+
+### Flink RPC实现
+
+<div class="wrapper" block="markdown">
 
 ```plantuml
 @startuml
@@ -265,215 +365,850 @@ Akka有两种核心的异步通信方式：
 hide empty members
 skinparam ArrowThickness 1
 
-interface RpcGateway
-interface TaskExecutorGateway
-interface FencedRpcGateway
-interface JobMasterGateway
-interface ResourceManagerGateway
-interface DispatcherGateway
-
-RpcGateway <|-- TaskExecutorGateway
-RpcGateway <|-- FencedRpcGateway
-RpcGateway <|-- JobMasterGateway
-RpcGateway <|-- DispatcherGateway
-FencedRpcGateway <|-- JobMasterGateway
-FencedRpcGateway <|-- ResourceManagerGateway
-FencedRpcGateway <|-- DispatcherGateway
-
-@enduml
-```
-
-**RpcGateway** 远程调用网关，是Flink远程调用的接口协议，提供了行为定义，对外提供可调用的接口，所有实现RPC的组件、类都实现了此接口。
-
-```Java
-public interface RpcGateway {
+interface RpcGateway {
     String getAddress();
     String getHostname();
 }
-```
+abstract class RpcEndpoint {
+    RpcService rpcService; 
+    RpcServer rpcServer;
 
-接口继承体系：
-
-```plantuml
-@startuml
-!include https://raw.githubusercontent.com/bschwarz/puml-themes/master/themes/sketchy-outline/puml-theme-sketchy-outline.puml
-hide empty members
-skinparam ArrowThickness 1
-
-interface RpcGateway
+}
+interface RpcService
+class AkkaRpcService
+interface RpcServer
 interface TaskExecutorGateway
-interface FencedRpcGateway
 interface JobMasterGateway
 interface ResourceManagerGateway
 interface DispatcherGateway
+interface InvocationHandler
 
-RpcGateway <|-- TaskExecutorGateway
-RpcGateway <|-- FencedRpcGateway
-RpcGateway <|-- JobMasterGateway
+RpcGateway <|.. RpcEndpoint
+RpcGateway <|-- RpcServer
+RpcGateway <|-- ResourceManagerGateway
 RpcGateway <|-- DispatcherGateway
-FencedRpcGateway <|-- JobMasterGateway
-FencedRpcGateway <|-- ResourceManagerGateway
-FencedRpcGateway <|-- DispatcherGateway
+RpcGateway <|-- JobMasterGateway
+RpcGateway <|-- TaskExecutorGateway
+
+RpcEndpoint <|-- ResourceManager
+RpcEndpoint <|-- Dispatcher
+RpcEndpoint <|-- JobMaster
+RpcEndpoint <|-- TaskExecutor
+
+ResourceManagerGateway <|.. ResourceManager
+DispatcherGateway <|.. Dispatcher
+JobMasterGateway <|.. JobMaster
+TaskExecutorGateway <|.. TaskExecutor
+
+RpcService <|-- AkkaRpcService
+RpcServer <|.. AkkaInvocationHandler
+InvocationHandler <|.. AkkaInvocationHandler
 
 @enduml
 ```
 
-+ `JobMastergateway`接口是JobMaster提供的对外服务接口
-+ `TaskExecutorGateway`接口是TaskManager提供的对外服务接口，实现类是`TaskExecutor`
-+ `ResourceManagerGateway`接口是ResourceManager资源管理器提供的对外服务接口
-+ `DispatcherGateway`是Flink提供的作业提交接口
+</div>
 
-组件之间的通信行为都是通过RpcGateway进行交互的，JobMaster、ResourceManager、Dispatcher在高可用模式下，由于涉及Leader选举，可能导致集群的脑裂问题，所以都继承了`FencedRpcGateway`。
+**RpcGateway** RPC客户端代理，用于定义RPC协议，是RPC客户端和RPC服务端沟通的桥梁。RPC服务端实现了接口中定义的方法，做具体的业务逻辑处理。RPC客户端是接口的代理对象，将对接口方法的调用转为Akka的消息发送。有以下几个子接口
 
-**RpcEndpoint** 在RpcGateway基础上提供了RPC服务组件的生命周期管理，Flink中所有提供远程调用服务的组件（Dispatcher、JobManager、ResourceManager、TaskExecutor等）都继承自RpcEndpoint。同一个RpcEndpoint中的所有调用只有一个线程处理，称为Endpoint主线程^[与Akka的Actor模型一样，所有对状态数据的修改在同一个线程中执行，所以不存在并发问题]。RpcEndpoint是RpcService、RpcServer的结合之处，在其本身的构造过程中使用`RpcService#startServer()`启动RpcServer，进入可以接收处理请求的状态，最后再将RpcServer绑定到主线程上真正执行起来。
++ JobMastergateway接口是JobMaster提供的对外服务接口
++ TaskExecutorGateway接口是TaskManager提供的对外服务接口
++ ResourceManagerGateway接口是ResourceManager资源管理器提供的对外服务接口
++ DispatcherGateway是Flink提供的作业提交接口
 
-```Java
-public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
-    protected RpcEndpoint(final RpcService rpcService, final String endpointId) {
-        this.rpcService = checkNotNull(rpcService, "rpcService");
-        this.endpointid = checkNotNull(endpointId, "endpointId");
-        // 调用RpcService启动Rpcendpoint
-        this.rpcServer = rpcService.startServer(this);
+**RpcEndpoint** RPC服务端，是Akka中Actor的封装，在RpcGateway基础上提供了RPC服务组件的生命周期管理，Flink中所有提供远程调用服务的组件（Dispatcher、JobManager、ResourceManager、TaskExecutor等）都继承自RpcEndpoint。同一个RpcEndpoint中的所有调用只有一个线程处理，称为Endpoint主线程^[与Akka的Actor模型一样，所有对状态数据的修改在同一个线程中执行，所以不存在并发问题]。RpcEndpoint是RpcService、RpcServer的结合之处，在其本身的构造过程中使用`RpcService#startServer()`启动RpcServer，进入可以接收处理请求的状态，最后再将RpcServer绑定到主线程上真正执行起来，将Rpc调用委托RpcServer进行处理。主要有以下实现类：
++ Dispatcher：位于JobManager中，负责作业调度执行
++ ResourceManager：位于JobManager中，负责资源管理，和TaskExecutor一起构成资源管理的主从架构
++ JobMaster：位于JobManager中，应用程序中的主控程序，类似于Spark中的Driver。在提交成功一个作业后就会启动一个JobMaster负责作业的执行
++ TaskExecutor：TaskManager中，负责资源管理
 
-        this.mainThreadExecutor = new MainThreadExecutor(rpcServer, this::validateRunsInMainThread);
-    }
-}
-```
+**RpcService** 是RpcEndpoint的运行时环境，是Akka中ActorSystem的封装^[一个ActorSystem系统中有多个Actor，同样一个RpcService中有多个RpcEndpoint]，提供了启动/停止/连接RpcServer的方法，在ClusterEntrypoint（JobMaster）和TaskManagerRunner（TaskExecutor）启动的过程中被初始化并启动。主要方法包括：
++ connect()：连接到一个RpcEndpoint，返回一个RpcGateway，然后可以使用此RpcGateway进行远程方法调用
++ startServer()：启动一个RpcEndpoint，返回一个RpcServer
++ stopServer()：停止某个RpcEndpoint
++ scheduleRunnable()：延迟调用执行某任务
++ execute()：异步执行某任务
 
-**RpcService** 是RpcEndpoint的成员变量，作用如下：
-+ 启动和停止RpcServer和连接RpcEndpoint
-+ 根据指定的连接地址，连接到RpcServer会返回一个RpcGateway（分为带FencingToken和不带FencingToken的版本）
-+ 延迟/立刻调度Runnable、Callable
+**AkkaRpcService** RpcService实现类，封装了ActorSystem，并保存了ActorRef到RpcEndpoint的映射关系，是Flink和Akka之间的通讯模块，负责处理Flink任务和Akka Actor之间的相互通信。当有客户端发送RPC请求时，Flink会将请求发送到对应的RpcEndpointName所绑定的ActorRef中进行处理，并将处理结果返回给客户端。在注册一个ActorRef作为RPC服务端之前，需要先定义一个实现了RpcEndpoint或ActorRpcEndpoint的类来作为服务端的业务逻辑实现，并在该类中重写onStart()和onStop()方法来分别处理服务端启动和停止时的逻辑。
 
-RpcService会在ClusterEntrypoint（JobMaster）和TaskManagerRunner（TaskExecutor）启动的过程中被初始化并启动。AkkaRpcService是RpcService的唯一实现，AkkaRpcService中包含了一个ActorSystem，保存了ActorRef和RpcEndpoint之间的映射关系，RpcService也提供了获取地址和端口的方法。RpcService会根据RpcEndpoint（Fenced和非Fenced）的类型构建不同的AkkaRpcActor（Fenced和非Fenced），并保存AkkaRpcActor引用和RpcEndpoint的对应关系，创建出来的AkkaRpcActor是底层Akka调用的实际接收者，RPC的请求在客户端被封装成RpcInvocation对象，以Akka消息的形式发送。同时也要完成RpcServer的构建，RpcServer也分为Fenced与非Fenced两类，最终通过Java的动态代理将所有的消息调用转发到InvocationHandler。
+**RpcServer** 是RPC服务端（RpcEndpoint）自身的代理对象，负责接收响应远端的RPC消息请求，供服务端调用自身非RPC方法，通过RpcEndpoint的getSelfGateway()方法获取其自身的Gateway对象然后调用该Endpoint的方法。其启动实质上是通知底层的AkkaRpcActor切换到START状态，开始处理远程调用请求
 
-```Java
-// AkkaRpcService.java
-public <C extendsRpcEndpoint & RpcGateway> RpcServer startServer(C rpcEndpoint) {
-    // 生成一个包含这些接口的代理，将调用转发到InvocationHandler
-    RpcServer server = (RpcServer)Proxy.newProxyInstance(classLoader, implemented RpcGateways.toArray(new Class<?>[implementedRpcGateway.size()]), akkaInvocationHandler)
-    return server;
-}
-```
-
-**RpcServer** 是`RpcEndpoint`的成员变量，负责接收响应远端的RPC消息请求，有`AkkaInvocationHandler`和`FencedAkkaInvocationHandler`两种实现。`RpcServer`的启动实质上是通知底层的AkkaRpcActor切换到START状态，开始处理远程调用请求。
-
-```Java
-class AkkaInvocationHandler implements InvocationHandler, AkkaBasedEndpoint, RpcServer {
-    @Override
-    public void start() {
-        rpcEndpoint.tell(ControlMessages.START, ActorRef.noSender());
-    }
-}
-```
+**AkkaInvocationHandler** 与AkkaRpcActor配合使用的调用处理程序，主要作用是将RPC请求包装成一个LocalRpcInvocation消息，并将其发送到AkkaRpcActor进行处理
 
 **AkkaRpcActor** 是Flink集群内部通信的具体实现，负责处理以下类型消息：
 + LocalRpcInvocation（本地Rpc调用）：LocalRpcInvocation类型的调用指派给`RpcEndpoint`进行处理，如果有响应结果，则将响应结果返还给Sender
 + RunAsync & CallAsync：RunAsync、CallAsync类型的消息带有可以执行的代码，直接在Actor的线程中执行
 + ControlMessage（控制消息）：ControlMessage用来控制Actor的行为，ControlMessage#START启动Actor开始处理消息，ControlMessage#STOP停止处理消息，停止后收到的消息会被丢弃掉
 
-### RPC交互过程
+**RPC服务端创建过程** RPC服务端是一个代理对象，创建入口为RpcEndpoint的构造方法，创建过程为（主要在AkkaRpcService中）：
+1. 以Ask方式向SupervisorActor发送StartAkkaRpcActor消息，SupervisorActor收到消息后根据消息里的RpcEndpoint的配置信息创建Actor，并以Tell方式回复创建成功
+2. 准备代理对象要实现的接口
+3. 生成代理对象
 
-Flink中RPC通信底层的RPC过程分为请求和响应两类。
+**RPC客户端创建过程** RPC客户端是一个代理对象，创建入口为RpcService的connect()方法，创建过程为（主要在AkkaRpcService中）：
+1. 使用ActorSystem.actorSelection(address).resolveOne()的方式来获取Actor的引用ActorRef，ActorRef可以用来向服务端Actor发送消息
+2. ActorRef创建完成后，使用Ask方式向服务端发送一条握手消息，用来验证客户端和服务端彼此版本一致
+3. 异步创建代理对象并返回
 
-**RPC请求发送** 在`RpcService`中调用`connect()`方法与对端的`RpcEndpoint`建立连接，`connect()`方法根据给的地址返回`InvocationHandler`（AkkaInvocationHandler或者FencedAkkaInvocationHandler），调用`InvocationHandler`的`invoke`方法并传入RPC调用的方法和参数信息。`AkkaInvocationHandler#invoke()`方法中判断方法所属的类，如果是RPC方法，则调用`invokeRpc`方法，将方法调用封装为RPCInvocation消息。如果是本地则生成LocalRPCInvocation，本地消息不需要序列化，如果是远程调用则创建RemoteRpcInvocation。`invokeRpc`方法中判断远程方法调用是否需要等待结果，如果无须等待，则使用Actor发送tell类型的消息，如果需要返回结果，则向Actor发送ask类型的消息
+**RPC调用流程** 在RpcService中调用connect()方法与RpcEndpoint建立连接，connect()方法根据给的地址返回InvocationHandler，调用InvocationHandler的invoke()方法并传入RPC调用的方法和参数信息。RPCAkkaRpcActor是消息接收的入口，AkkaRpcActor在RpcEndpoint中构造生成，负责将消息交给不同的方法进行处理。具体步骤如下：
+1. 通过客户端代理对象调用RpcGateway的方法会交由invoke方法执行
+2. invoke将方法、参数信息封装为RpcInvocation对象，并通过ActorRef将消息发送给服务端Actor
+    + 如果执行的方法有返回值就使用Akk Ask方式，否则以Tell方式发送消息
+    + 通过连接的服务端的地址可以判断出服务端在远程还是本地
+    + 如果在远程，消息类型为RemoteRpcInvocation，实现了序列化接口，对象可序列化传输
+    + 如果在本地，消息类型为LocalRpcInvocation
+3. 服务端Actor收到RpcInvocation消息，会从中获取到方法名、方法参数等相关信息，在主线程中通过反射的方式调用代理对象对应方法执行业务逻辑，如果方法有返回值，还会以Tell方法告知客户端结果
+
+
 ```Java
-class AkkaInvocationHandler implements InvocationHandler, AkkaBaseEndpoint, RpcServer {
-    @Override
-    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        Class<?> declaringClass = method.getDeclaringClass();
+public abstract class RpcEndpoint implements RpcGateway {
 
+    String endpointId;            // 该RpcEndpoint的唯一标识
+    RpcService rpcService;        // 用于启动RpcServer、获取RpcGateway
+    RpcServer rpcServer;          // 访问底层RpcServer的接口
+    MainThreadExecutor mainThreadExecutor;
+
+    RpcEndpoint(RpcService rpcService, String endpointId) {
+        // 通过RpcService启动RpcServer，生成代理对象
+        this.rpcServer = rpcService.startServer(this);
+        // 主线程执行器，所有调用在主线程中串行执行
+        this.mainThreadExecutor = new MainThreadExecutor(rpcServer, this::validateRunsInMainThread);
+    }
+    // 执行Rpc调用
+    void runAsync(Runnable runnable) {
+        rpcServer.runAsync(runnable);
+    }
+    CompletableFuture<V> callAsync(Callable<V> callable, Time timeout) {
+        return rpcServer.callAsync(callable, timeout);
+    }
+    // 启动RpcEndpoint，通知底层RpcServer RpcEndpoint已准备好处理RPC
+    void start() {
+        rpcServer.start();
+    }
+}
+/** 基于Akka的RpcService实现
+ *  RpcService启动Akka Actor处理RPC
+ */
+class AkkaRpcService implements RpcService {
+
+    ActorSystem actorSystem;
+    Map<ActorRef, RpcEndpoint> actors = new HashMap<>();
+    Supervisor supervisor;       // startSupervisorActor();
+
+    // RPC服务端创建过程（RPC服务端是一个代理对象）
+    // 启动指定RpcEndpoint上的RpcServer，创建Akka Actor并将Akka ActorRef绑定到指定的RpcEndpoint上，将其作为RPC服务端暴露出去，接收来自RPC客户端的RPC请求
+    <C extends RpcEndpoint & RpcGateway> RpcServer startServer(C rpcEndpoint) {
+
+        // 1. 以Ask方式向SupervisorActor发送StartAkkaRpcActor消息，SupervisorActor收到消息后根据消息里的RpcEndpoint的配置信息创建Actor，并以Tell方式回复创建成功
+        SupervisorActor.ActorRegistration actorRegistration = SupervisorActor.startAkkaRpcActor(supervisor.getActor(), actorTerminationFuture -> Props.create(...), rpcEndpoint.getEndpointId());
+        ActorRef actorRef = actorRegistration.getActorRef();
+        actors.put(actorRef, rpcEndpoint);
+
+        LOG.info("Starting RPC endpoint for {} at {} .", rpcEndpoint.getClass().getName(), actorRef.path());
+
+        // 2. 准备代理对象实现的接口
+        // 解析该RpcEndpoint实现的所有RpcGateway接口
+        Set<Class<?>> implementedRpcGateways = new HashSet<>(RpcUtils.extractImplementedRpcGateways(rpcEndpoint.getClass()));
+
+        // 添加RpcServer和AkkaBasedEndpoint类
+        implementedRpcGateways.add(RpcServer.class);
+        implementedRpcGateways.add(AkkaBasedEndpoint.class);
+
+        // 3. 生成代理对象
+        // 根据不同类型动态创建代理对象
+        InvocationHandler akkaInvocationHandler = rpcEndpoint instanceof FencedRpcEndpoint ?  new FencedAkkaInvocationHandler<>(...) : new AkkaInvocationHandler();
+
+        // 生成RpcServer对象，而后对该RpcServer的调用都会进入Handler的invoke方法处理，handler实现了多个接口的方法
+        ClassLoader classLoader = getClass().getClassLoader();
+        RpcServer server = (RpcServer) Proxy.newProxyInstance(
+            classLoader,
+            implementedRpcGateways.toArray(new Class<?>[implementedRpcGateways.size()]),
+            akkaInvocationHandler);
+        return server;
+    }
+
+    // RPC客户端创建过程（RPC客户端是一个代理对象）
+    <C extends RpcGateway> CompletableFuture<C> connect(String address, Class<C> clazz) {
+
+        // 1. 使用ActorSystem.actorSelection(address).resolveOne的方式来获取Actor的引用ActorRef（ActorRef用来向服务端发送请求）
+        CompletableFuture<ActorRef> actorRefFuture = resolveActorAddress(address);
+
+        // 2. ActorRef创建完成后，使用ask的方式向服务端发送一条握手消息(用来验证Client和Server彼此版本一致)
+        CompletableFuture<HandshakeSuccessMessage> handshakeFuture =
+            actorRefFuture.thenCompose((ActorRef actorRef) ->
+                AkkaFutureUtils.toJava(
+                    Patterns.ask(
+                        actorRef,
+                        new RemoteHandshakeMessage(clazz, getVersion()),
+                        configuration.getTimeout().toMilliseconds())
+                            .<HandshakeSuccessMessage>mapTo(ClassTag$.MODULE$.<HandshakeSuccessMessage>apply(HandshakeSuccessMessage.class))));
+
+        // 3. 异步创建代理对象并返回
+        CompletableFuture<C> gatewayFuture =
+            actorRefFuture.thenCombineAsync(
+                handshakeFuture,
+                (ActorRef actorRef, HandshakeSuccessMessage ignored) -> {
+                    InvocationHandler invocationHandler = invocationHandlerFactory.apply(actorRef);
+                    ClassLoader classLoader = getClass().getClassLoader();
+                    C proxy = (C)Proxy.newProxyInstance(classLoader, new Class<?>[] {clazz}, invocationHandler);
+                    return proxy;},
+                actorSystem.dispatcher());
+
+        return guardCompletionWithContextClassLoader(gatewayFuture, flinkClassLoader);
+    }
+
+}
+
+class SupervisorActor extends AbstractActor {
+
+    // 发送消息
+    static StartAkkaRpcActorResponse startAkkaRpcActor(ActorRef supervisor, StartAkkaRpcActor.PropsFactory propsFactory, String endpointId) {
+        // 以Ask方式发送消息并等待结果
+        // Ask在实现上是创建一个Actor等待响应结果，成功或者超时时，销毁Actor
+        return Patterns.ask(supervisor, createStartAkkaRpcActorMessage(propsFactory, endpointId), RpcUtils.INF_DURATION)
+            .toCompletableFuture()
+            .thenApply(SupervisorActor.StartAkkaRpcActorResponse.class::cast)
+            .join();
+    }
+
+    // 处理消息
+    void createStartAkkaRpcActorMessage(StartAkkaRpcActor startAkkaRpcActor) {
+        String endpointId = startAkkaRpcActor.getEndpointId();
+        AkkaRpcActorRegistration akkaRpcActorRegistration = new AkkaRpcActorRegistration(endpointId);
+
+        Props akkaRpcActorProps = startAkkaRpcActor.getPropsFactory().create(akkaRpcActorRegistration.getInternalTerminationFuture());
+
+        LOG.debug("Starting {} with name {}.", akkaRpcActorProps.actorClass().getSimpleName(), endpointId);
+
+        // 创建Actor
+        ActorRef actorRef = getContext().actorOf(akkaRpcActorProps, endpointId);
+
+        registeredAkkaRpcActors.put(actorRef, akkaRpcActorRegistration);
+        // 回复消息
+        getSender().tell(
+            StartAkkaRpcActorResponse.success(ActorRegistration.create(actorRef, akkaRpcActorRegistration.getExternalTerminationFuture())),
+            getSelf());
+    }
+}
+
+interface RpcServer extends
+    StartStoppable, MainThreadExecutable, RpcGateway
+{
+    // 开始处理RPC，继承自StartStoppable
+    void start();
+    // 停止处理RPC，继承自StartStoppable
+    void stop();
+    CompletableFuture<Void> getTerminationFuture();
+}
+
+class AkkaInvocationHandler implements
+    InvocationHandler, AkkaBasedEndpoint, RpcServer
+{
+    Object invoke(Object proxy, Method method, Object[] args) {
+
+        Class<?> declaringClass = method.getDeclaringClass();
         Object result;
-        // 判断方法所属Class
+
+        // 调用AkkaInvocationHandler实现的方法时，直接进行本地方法调用，否则进行RPC调用
         if (declaringClass.equals(AkkaBasedEndpoint.class)
-            || declaringClass.equals(Object.class)
-            || declaringClass.equals(RpcGateway.class)
-            || declaringClass.equals(StartStoppable.class)
-            || declaringClass.equals(MainThreadExecutable.class)
-            || declaringClass.equals(RpcServer.class)) {
+                || declaringClass.equals(Object.class)
+                || declaringClass.equals(RpcGateway.class)
+                || declaringClass.equals(StartStoppable.class)
+                || declaringClass.equals(MainThreadExecutable.class)
+                || declaringClass.equals(RpcServer.class)) {
             result = method.invoke(this, args);
-        } else if (declaringClass.equals(FencedRpcGateway.class)) {
-            // ...
         } else {
-            // rpc调用
+            // RPC调用
             result = invokeRpc(method, args);
         }
         return result;
     }
-    private Object invokeRpc(Method method, Object[] args) throws Exception {
+
+    /** RPC调用
+     *  判断远程方法是否需要等待结果
+     *  + 如果无需等待，则向Actor发送tell类型的消息
+     *  + 如果需要等待，则向Actor发送ask类型的消息
+     */
+    Object invokeRpc(Method method, Object[] args) {
+        // 获取方法相应信息
         String methodName = method.getName();
         Class<?>[] parameterTypes = method.getParameterTypes();
         Annotation[][] parameterAnnotations = method.getParameterAnnotations();
+        Class<?> returnType = method.getReturnType();
         Time futureTimeout = extractRpcTimeout(parameterAnnotations, args, timeout);
 
-        final RpcInvocation rpcInvocation = createRpcInvocationMessage(methodName, parameterTypes, args);
+        // 创建RpcInvocationMessage
+        RpcInvocation rpcInvocation = createRpcInvocationMessage(method.getDeclaringClass().getSimpleName(), methodName, parameterTypes, args);
 
-        Class<?> returnType = method.getReturnType();
-        final Object result;
+        Object result;
+
+        // 无返回则使用tell()方法，否则使用ask()方法
         if (Objects.equals(returnType, Void.TYPE)) {
             tell(rpcInvocation);
             result = null;
         } else {
-            // 异步调用等待返回
-            CompletableFuture<?> resultFuture = ask(rpcInvocation, futureTimeout);
+            result = ask(rpcInvocation, futureTimeout);
         }
         return result;
     }
-}
-```
-**RPC请求响应** AkkaRpcActor是消息接收的入口，AkkaRpcActor在RpcEndpoint中构造生成，负责将消息交给不同的方法进行处理
 
-```Java
-// AkkaRpcActor.java
-@Override
-public Receive createReceive() {
-    return ReceiveBuilder.create()
-        .match(RemoteHandshakeMessage.class, this::handleHandshakeMessage
-        .match(ControlMessages.class, this::handleControlMessage))
-        .matchAny(this::handleMessage)
-        .build();
-}
-```
-
-AkkaRpcActor接收到的消息共有3种：
-+ 握手消息：在客户端构造时会通过ActorSelection发送过来，收到消息后会检查接口、版本是否匹配，如果一致就返回成功
-```Java
-// AkkaRpcActor.java
-private void handleHandshakeMessage(RemoteHandshakeMessage handshakeMessage) {
-    if (!isCompatibleVersion(handshakeMessage.getVersion())) {
-        // 版本不兼容异常处理
-    } else if (!isGatewaySupported(handshakeMessage.getRpcGateway())) {
-        // RpcGateway不匹配异常处理
-    } else {
-        getSender().tell(new Status.Success(HandshakeSuccessMessage.INSTANCE, getSelf()));
+    void start() {
+        rpcEndpoint.tell(ControlMessages.START, ActorRef.noSender());
     }
 }
-```
-+ 控制消息：
-```Java
-// AkkaRpcActor.java
-private void handleControlMessage(ControlMessages controlMessage) {
-    switch (controlMessage) {
-        case START: state = state.start(this); break;
-        case STOP: state = state.stop(); break;
-        case TERMINATE: state.terminate(this); break;
-        default: handleUnknownControlMessage(controlMessage);
+
+AkkaRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
+    T rpcEndpoint;
+    State state;
+
+    AkkaRpcActor(
+        T rpcEndpoint,
+        CompletableFuture<Boolean> terminationFuture,
+        int version,
+        long maximumFramesize,
+        ClassLoader flinkClassLoader)
+    {
+        ......
     }
-}
-```
-+ RPC消息：通过解析RpcInvocation获取方法名和参数类型，并从RpcEndpoint类中找到Method对象，通过反射调用该方法，如果有返回结果，会以Akka消息的形式返回给发送者
-```Java
-// AkkaRpcActor.java
-private void handleMessage(final Object message) {
-    if (state.isRunning()) {
-        mainThreadValidator.enterMainThread();
-        try {
-            handleRpcMessage(message);
-        } finally {
-            mainThreadValidator.exitMainThread();
+
+    // 定义Akka消息处理逻辑，该
+    Receive createReceive() {
+        return ReceiveBuilder.create()
+            .match(RemoteHandshakeMessage.class, this::handleHandshakeMessage)
+            .match(ControlMessages.class, this::handleControlMessage)
+            .matchAny(this::handleRpcMessage)
+            .build();
+    }
+
+    // 当AkkaRpcActor收到RemoteHandshakeMessage消息时，生成客户端和服务器的通信地址，并返回给客户端以确认握手成功
+    void handleHandshakeMessage(RemoteHandshakeMessage handshakeMessage) {
+        getSender().tell(new Status.Success(HandshakeSuccessMessage.INSTANCE), getSelf());
+    }
+
+    void handleRpcMessage(Object message) {
+        if (message instanceof RunAsync) {
+            handleRunAsync((RunAsync) message);
+        } else if (message instanceof CallAsync) {
+            handleCallAsync((CallAsync) message);
+        } else if (message instanceof RpcInvocation) {
+            handleRpcInvocation((RpcInvocation) message);
+        } else {
+            ......
         }
-    } else {
-        // 异常处理
+    }
+
+    void handleControlMessage(ControlMessages controlMessage) {
+        switch (controlMessage) {
+            case START:
+                state = state.start(this, flinkClassLoader);
+                break;
+            case STOP:
+                state = state.stop();
+                break;
+            case TERMINATE:
+                state = state.terminate(this, flinkClassLoader);
+                break;
+            default:
+                handleUnknownControlMessage(controlMessage);
+    }
+    // 通过查找RpcEndpoint上的方法，并使用提供的参数调用此方法来处理RPC调用
+    // 当AkkaRpcActor收到RpcInvocation消息时，会首先执行方法调用，并生成异步或同步调用的结果，
+    // 然后根据调用类型调用sendAsyncResponse()或者sendSyncResponse()方法将结果发送给请求方
+    void handleRpcInvocation(RpcInvocation rpcInvocation) {
+        Method rpcMethod = null;
+        // 获取方法信息
+        String methodName = rpcInvocation.getMethodName();
+        Class<?>[] parameterTypes = rpcInvocation.getParameterTypes();
+
+        // 在RpcEndpoint中查找指定方法
+        // 实际执行代码为rpcEndpoint.getClass().getMethod(methodName, parameterTypes)
+        rpcMethod = lookupRpcMethod(methodName, parameterTypes);
+
+        if (rpcMethod.getReturnType().equals(Void.TYPE)) {
+            // 无返回值时直接调用
+            rpcMethod.invoke(rpcEndpoint, rpcInvocation.getArgs()).get();
+        } else {
+            Object result = rpcMethod.invoke(rpcEndpoint, rpcInvocation.getArgs()).get();
+            // 返回结果给调用者
+            sendResponse(result);
+        }
+    }
+
+    // handleRunAsync()用于处理来自远程客户端的RunAsync请求。该请求用于在远程集群上异步运行指定任务，并返回任务的异步单元
+    void handleRunAsync(RunAsync runAsync) {
+        final long timeToRun = runAsync.getTimeNanos();
+        final long delayNanos;
+
+        if (timeToRun == 0 || (delayNanos = timeToRun - System.nanoTime()) <= 0) {
+            // 到达调度时间时立即执行
+            runAsync.getRunnable().run().get();
+        } else {
+            // 计算延迟时间
+            FiniteDuration delay = new FiniteDuration(delayNanos, TimeUnit.NANOSECONDS);
+            // 重新封装消息
+            RunAsync message = new RunAsync(runAsync.getRunnable(), timeToRun);
+            Object envelopedSelfMessage = envelopeSelfMessage(message);
+
+            // 等待指定延迟时间后给自己再发送一个消息
+            getContext().system().scheduler().scheduleOnce(delay, getSelf(), envelopedSelfMessage, getContext().dispatcher(), ActorRef.noSender());
+        }
+    }
+}
+```
+
+### Flink RPC连接建立
+
+<div class="wrapper" block="markdown">
+
+```bob-svg
+.----------------------------------------------------------------------------------------------------------------------.
+|   JobManager                                                                                                         |
+|                                              .-------------------.                                                   |
+|                                              |     RpcService    |                                                   |
+|                                              |  .-------------.  |                                                   |
+|                                              |  | ActorSystem |  |                                                   |
+|                                              |  '-------------'  |                                                   |
+|                                              '----------+--------'                                                   |
+|                                                         |                                                            |
+|                                                         | startServer                                                |
+|                                                         |                                                            |
+|                                                         |                                                            |
+|                  +--------------------------------------+--------------------------------------+                     |
+|                  |                                      |                                      |                     |
+|                  |                                      |                                      |                     |
+|                  |                                      |                                      |                     |
+|                  |                                      |                                      |                     |
+|                  |                                      |                                      |                     |
+|                  v                                      v                                      v                     |
+|  .----------------------------------.  .-----------------------------------.  .-----------------------------------.  |
+|  |            Dispatcher            |  |          ResourceManager          |  |             JobMaster             |  |
+|  |          .------------.          |  |         .---------------.         |  |         .---------------.         |  |
+|  |          |    Actor   |          |  |         |     Actor     |         |  |         |     Actor     |         |  |
+|  |          '------------'          |  |         '---------------'         |  |         '---------------'         |  |
+|  |                                  |  | .~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~. |  | .~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~. |  |
+|  | .~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~. |  | ! .---------------------------. ! |  | ! .---------------------------. ! |  |
+|  | ! .--------------------------. ! |  | ! |      JobMasterGateway     | ! |  | ! |  ResrouceManagerGateway   | ! |  |
+|  | ! |  ResourceManagerGateway  | ! |  | ! |      .--------------.     | ! |  | ! |      .--------------.     | ! |  |
+|  | ! |      .------------.      | ! |  | ! |      |   ActorRef   |     | ! |  | ! |      |   ActorRef   |     | ! |  |
+|  | ! |      |  ActorRef  |      | ! |  | ! |      '--------------'     | ! |  | ! |      '--------------'     | ! |  |
+|  | ! |      '------------'      | ! |  | ! '---------------------------' ! |  | ! '---------------------------' ! |  |
+|  | ! '--------------------------' ! |  | ! .---------------------------. ! |  | ! .---------------------------. ! |  |
+|  | '~~~~~~~~~~~~~~~~~~~~~+~~~~~~~~' |  | ! |     TaskExecutorGateway   | ! |  | ! |     TaskExecutorGateway   | ! |  |
+|  '---------------+-------+----------'  | ! |      .--------------.     | ! |  | ! |      .--------------.     | ! |  |
+|                  |       !             | ! |      |   ActorRef   |     | ! |  | ! |      |   ActorRef   |     | ! |  |
+|                  |       |             | ! |      '--------------'     | ! |  | ! |      '--------------'     | ! |  |
+|                  |       |             | ! '---------------------------' ! |  | ! '---------------------------' ! |  |
+|                  |       |             | ! .---------------------------. ! |  | ! .---------------------------. ! |  |
+|                  |       |             | ! |     TaskExecutorGateway   | ! |  | ! |     TaskExecutorGateway   | ! |  |
+|                  |       |             | ! |      .--------------.     | ! |  | ! |      .--------------.     | ! |  |
+|                  |       |             | ! |      |   ActorRef   |     | ! |  | ! |      |   ActorRef   |     | ! |  |
+|                  |       |             | ! |      '--------------'     | ! |  | ! |      '--------------'     | ! |  |
+|                  |       |             | ! '---------------------------' ! |  | ! '---------------------------' ! |  |
+|                  |       |             | '~~~~~~~~~~+~~~~~~~~~~~~~~~~~~~~' |  | '~~~~~~~~~~~~~~~~~~~~~~~+~~~~~~~' |  |
+|                  |       |             '------------+-----+----------------'  '-------------------+-----+---------'  |
+'------------------+-------+--------------------------+-----+---------------------------------------+-----+------------'
+                   |       |                          |     |                                       |     !
+                   |       |                          !     |                                       |     |
+                   |       '~~~~~~~~~~~~~~~~~~~~~~~~~~+~~~~~+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~+~~~~~+
+                   |                                        |                                       |     |
+                   '----------------------------------------+---------------------------------------'     |
+                                                            |                                             |
+                                                .-----------+----------------.              .-------------+-----------.
+                                                |  "是"                      |              |  "是客户端对象，用来连" |
+                                                |  RpcEndpoint               |              |  "接对应的RPC服务端"    |
+                                                |  RpcServer                 |              '-------------------------'
+                                                |  "RpcGateway的服务端实现"  |
+                                                |  代理对象                  |
+                                                '----------------------------'
+
+                         .----------------------------------.
+                         | TaskManager                      |
+                         |       .-----------------.        |
+                         |       |   RpcService    |        |
+                         |       | .-------------. |        |
+                         |       | | ActorSystem | |        |
+                         |       | '------+------' |        |
+                         |       '--------+--------'        |
+                         |                | startServer     |
+                         |                v                 |
+                         | .~~~~~~~~~~~~~~+~~~~~~~~~~~~~~~. |           .--------------------------.
+                         | !         TaskExecutor         | |           | 是                       |
+                         | !       .--------------.       +-+-----------| Rpcendpoint              |
+                         | !       |     Actor    |       ! |           | RpcServer                |
+                         | !       '--------------'       ! |           | "RpcGateway的服务端实现" |
+                         | ! .--------------------------. ! |           | "代理对象"               |
+                         | ! | .----------------------. | ! |           '--------------------------'
+                         | ! | |ResourceManagerGateway| | ! |
+                         | ! | |    .-------------.   | | ! |
+                         | ! | |    |    Actor    |   | | ! |            .-----------------.
+                         | ! | |    '-------------'   | | ! |            |  "客户端对象"   |
+                         | ! | '----------------------' +-+-+------------|  "用来连接对应" |
+                         | ! | .----------------------. | ! |            |  "的RPC服务器"  | 
+                         | ! | |   JobMasterGateway   | | ! |            '-----------------'
+                         | ! | |    .-------------.   | | ! |
+                         | ! | |    |    Actor    |   | | ! |
+                         | ! | |    '-------------'   | | ! |
+                         | ! | '----------------------' | ! |
+                         | ! '--------------------------' ! |
+                         | '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~' |
+                         '----------------------------------'
+```
+
+</div>
+
+RPC服务端提供RPC服务，其内部也有其他RPC服务的客户端。ResourceManager和Dispatcher在JobManager进程中，Flink集群先启动JobManager进程后启动TaskManager进程。有任务要运行时Dispatcher才创建JobMaster^[Dispatcher可创建多个JobMaster，一个JobGraph对应一个JobMaster]，ResourceManager地址是已知的，JobMaster连接上ResourceManager后调用ResourceManager的`registerJobManager()`方法注册自己，ResourceManager再回连JobMaster。
+
+<div class="container" block="markdown">
+
+```bob-svg
+                     .-----------------.
+                     | ResourceManager |
+                     '-----------------'
+       JM"主动连接RM"    ^           ^   "TM主动连接RM"
+        RM"回连JM"      /             \    RM"回连TM"
+                       /               \
+                      v                 v
+            .-----------.             .-------------.
+            | JobMaster |<----------->| TaskManager |
+            '-----------'             '-------------'
+                         "TM主动连接JM"
+                           JM"回连TM"
+```
+
+</div>
+
+1. 连接建立过程：
++ JobMaster连接ResourceManager入口是JobMaster的reconnectToResourceManager()方法
++ TaskManager连接ResourceManager入口是TaskExecutor的reconnectToResourceManager()方法
++ TaskManager连接JobManager入口是TaskExecutor的disconnectAndTryReconnectToJobManager()方法
+2. 地址获取：通过LeaderRetrievalService（具体为ResourceManagerLeaderRetriever）获取，没有启用HA时，ResourceManager、Dispatcher地址、WebMonitor地址都保存在StandaloneHaServices对象中，地址不会发生变化，地址为Akka地址，格式为'protocolPrefix://flink@hostname:port/user/rpc/endpointName'，hostname和port为JobManager的RPC host和port，三者仅在最后的endpointName上有区别。启用HA时，Zookeeper是通过NodeCache监听了一个节点的数据变化，这个节点保存了leader信息，K8S则是Watch了一个ConfigMap
+3. 连接建立时机：第一次建立连接在`notifyLeaderAddress()`方法中，心跳超时或者切leader时会发生重连
+
+JobMaster发现自己与ResourceManager心跳超时，JobMaster会重连ResourceManager；JobMaster发现ResourceManager切leader，JobMaster会重连新的ResourceManager；ResourceManager发现自己与JobMaster心跳超时，ResourceManager会通知JVM去重连ResourceManager
+
+<div class="wrapper" block="markdown">
+
+```plantuml
+@startuml
+skinparam ArrowThickness 1
+
+[-> JobMaster: reconnectToResourceManager()
+activate JobMaster
+
+  JobMaster -> JobMaster: tryConnectToResourceManager()
+  activate JobMaster
+
+    JobMaster -> JobMaster: connectToResourceManager()
+    activate JobMaster
+
+      JobMaster -> ResourceManagerConnection: start()
+      activate ResourceManagerConnection
+
+        ResourceManagerConnection -> ResourceManagerConnection: createNewRegistration()
+        activate ResourceManagerConnection
+
+          ResourceManagerConnection -> ResourceManagerConnection: generateRegistration()
+          activate ResourceManagerConnection
+          deactivate ResourceManagerConnection
+
+          ResourceManagerConnection -> RetryingRegistration: getFuture()
+          activate RetryingRegistration
+
+          RetryingRegistration --> ResourceManagerConnection
+          deactivate RetryingRegistration
+
+          ResourceManagerConnection ->> ResourceManagerConnection: onRegistrationSuccess()
+          activate ResourceManagerConnection
+
+            ResourceManagerConnection ->> JobMaster: establishResourceManagerConnection()
+            activate JobMaster
+            deactivate JobMaster
+
+          deactivate ResourceManagerConnection
+
+        deactivate ResourceManagerConnection
+
+        ResourceManagerConnection -> RetryingRegistration: startRegistration()
+        activate RetryingRegistration
+
+          RetryingRegistration -> RpcService: connect()
+          activate RpcService
+
+          RpcService --> RetryingRegistration
+          deactivate RpcService
+
+          RetryingRegistration ->> RetryingRegistration: register()
+          activate RetryingRegistration
+
+            RetryingRegistration -> RetryingRegistration: invokeRegistration()
+            activate RetryingRegistration
+
+              RetryingRegistration -> ResourceManager: registerJobMaster()
+              activate ResourceManager
+
+                ResourceManager -> ResourceManager: getRpcService()
+                activate ResourceManager
+                deactivate ResourceManager
+
+                ResourceManager -> RpcService: connect()
+                activate RpcService
+
+                RpcService --> ResourceManager
+                deactivate RpcService
+
+                ResourceManager ->> ResourceManager: registerJobMasterInternal()
+                activate ResourceManager
+                deactivate ResourceManager
+
+              ResourceManager --> RetryingRegistration
+              deactivate ResourceManager
+
+            deactivate RetryingRegistration
+
+            RetryingRegistration ->> RetryingRegistration
+            activate RetryingRegistration
+
+              RetryingRegistration -> RetryingRegistrationResult: success()
+              activate RetryingRegistrationResult
+  
+              RetryingRegistrationResult --> RetryingRegistration
+              deactivate RetryingRegistrationResult
+  
+              RetryingRegistration -> CompletableFuture: complete()
+              activate CompletableFuture
+  
+              CompletableFuture --> RetryingRegistration
+              deactivate CompletableFuture
+
+            deactivate RetryingRegistration
+
+          deactivate RetryingRegistration
+
+        RetryingRegistration --> ResourceManagerConnection
+        deactivate RetryingRegistration
+
+      ResourceManagerConnection --> JobMaster
+      deactivate ResourceManagerConnection
+
+    deactivate JobMaster
+
+@enduml
+```
+</div>
+
+```Java
+class JobMaster extends PermanentlyFencedRpcEndpoint<JobMasterId> implements JobMasterGateway, JobMasterService {
+
+    ResourceManagerConnection resourceManagerConnection;
+    ResourceManagerAddress resourceManagerAddress;
+    ScheduledExecutorService futureExecutor = jobManagerSharedServices.getFutureExecutor();
+    EstablishedResourceManagerConnection establishedResourceManagerConnection;
+    SlotPoolService slotPoolService;
+    HeartbeatManager<Void, Void> resourceManagerHeartbeatManager;
+
+    // ResourceManager
+    LeaderRetrievalService resourceManagerLeaderRetriever;     // highAvailabilityServices.getResourceManagerLeaderRetriever();
+
+    // TaskManager
+
+    void connectToResourceManager() {
+
+        log.info("Connecting to ResourceManager {}", resourceManagerAddress);
+        resourceManagerConnection =
+            new ResourceManagerConnection(
+                log,
+                jobGraph.getJobID(),                            // JobId
+                resourceId,                                     // JobManagerResourceId
+                getAddress(),                                   // JobManagerRpcAddress
+                getFencingToken(),                              // JobMasterId
+                resourceManagerAddress.getAddress(),            // ResourceManagerAddress
+                resourceManagerAddress.getResourceManagerId(),  // ResourceManagerId
+                futureExecutor);                                // executor
+
+        resourceManagerConnection.start();     // 实际调用RegisteredRpcConnection的start()方法
+    }
+
+    void establishResourceManagerConnection(JobMasterRegistrationSuccess success) {
+        ResourceManagerId resourceManagerId = success.getResourceManagerId();
+
+        log.info("JobManager successfully registered at ResourceManager, leader id: {}.", resourceManagerId);
+
+        ResourceManagerGateway resourceManagerGateway = resourceManagerConnection.getTargetGateway();
+
+        ResourceID resourceManagerResourceId = success.getResourceManagerResourceId();
+
+        establishedResourceManagerConnection = new EstablishedResourceManagerConnection(resourceManagerGateway, resourceManagerResourceId);
+
+        slotPoolService.connectToResourceManager(resourceManagerGateway);
+
+        resourceManagerHeartbeatManager.monitorTarget(resourceManagerResourceId, new ResourceManagerHeartbeatReceiver(resourceManagerGateway));
+    }
+
+    class ResourceManagerConnection
+        extends RegisteredRpcConnection<
+            ResourceManagerId,
+            ResourceManagerGateway,
+            JobMasterRegistrationSuccess,
+            RegistrationResponse.Rejection>
+    {
+        RetryingRegistration<
+            ResourceManagerId,
+            ResourceManagerGateway,
+            JobMasterRegistrationSuccess,
+            RegistrationResponse.Rejection> generateRegistration()
+        {
+            return new RetryingRegistration<...>(
+                log,
+                getRpcService(),                          // JobMaster的RpcService
+                "ResourceManager",                        // TargetName
+                ResourceManagerGateway.class,             // TargetType
+                getTargetAddress(),                       // TargetAddress
+                getTargetLeaderId(),                      // FencingToken
+                jobMasterConfiguration.getRetryingRegistrationConfiguration())
+            {
+                @Override
+                CompletableFuture<RegistrationResponse> invokeRegistration(
+                    ResourceManagerGateway gateway,
+                    ResourceManagerId fencingToken,
+                    long timeoutMillis)
+                {
+                    Time timeout = Time.milliseconds(timeoutMillis);
+                    return gateway.registerJobMaster(jobMasterId, jobManagerResourceID, jobManagerRpcAddress, jobID, timeout);
+                }
+            };
+        }
+
+        @Override
+        void onRegistrationSuccess(JobMasterRegistrationSuccess success) {
+            runAsync(() -> {
+                // filter out outdated connections
+                //noinspection ObjectEquality
+                if (this == resourceManagerConnection) {
+                    establishResourceManagerConnection(success);
+                }
+            });
+        }
+    }
+}
+
+
+class abstract class RegisteredRpcConnection<
+    F extends Serializable,
+    G extends RpcGateway,
+    S extends RegistrationResponse.Success,
+    R extends RegistrationResponse.Rejection>
+{
+
+    void start() {
+        RetryingRegistration<F, G, S, R> newRegistration = createNewRegistration();
+        newRegistration.startRegistration();
+    }
+
+    RetryingRegistration<F, G, S, R> createNewRegistration() {
+        RetryingRegistration<F, G, S, R> newRegistration = generateRegistration();
+
+        CompletableFuture<RetryingRegistration.RetryingRegistrationResult<G, S, R>> future = newRegistration.getFuture();
+
+        future.thenAcceptAsync((RetryingRegistration.RetryingRegistrationResult<G, S, R> result) -> {
+            targetGateway = result.getGateway();
+            onRegistrationSuccess(result.getSuccess());},
+            executor);
+
+        return newRegistration;
+    }
+}
+
+abstract class RetryingRegistration<
+    F extends Serializable,
+    G extends RpcGateway,
+    S extends RegistrationResponse.Success,
+    R extends RegistrationResponse.Rejection>
+{
+
+    RpcService rpcService;
+
+    void startRegistration() {
+        // 1. 建立与ResourceManager的连接
+        CompletableFuture<G> rpcGatewayFuture = 
+            rpcService.connect(targetAddress, targetType); // JobMaster的RpcService
+        // 2. 向ResourceManager注册自己
+        CompletableFuture<Void> rpcGatewayAcceptFuture =
+            rpcGatewayFuture.thenAcceptAsync(
+                (G rpcGateway) -> {
+                    log.info("Resolved {} address, beginning registration", targetName);
+                    //3. ResourceManager方法内部回连JobMaster
+                    register(rpcGateway, 1, retryingRegistrationConfiguration.getInitialRegistrationTimeoutMillis());
+                },
+                rpcService.getScheduledExecutor());
+    }
+
+    void register(G gateway, int attempt, long timeoutMillis) {
+        log.debug("Registration at {} attempt {} (timeout={}ms)", targetName, attempt, timeoutMillis);
+        // invokeRegistration()方法为RetryingRegistration中的抽象方法，具体实现在JobMaster.ResourceManagerConnection中
+        CompletableFuture<RegistrationResponse> registrationFuture = invokeRegistration(gateway, fencingToken, timeoutMillis);
+        CompletableFuture<Void> registrationAcceptFuture =
+            registrationFuture.thenAcceptAsync(
+                (RegistrationResponse result) -> {
+                    if (result instanceof RegistrationResponse.Success) {
+                        log.debug("Registration with {} at {} was successful.", targetName, targetAddress);
+                        S success = (S) result;
+                        completionFuture.complete(RetryingRegistrationResult.success(gateway, success));
+                    }
+                    ......
+                },
+                rpcService.getScheduledExecutor());
+    }
+}
+
+abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
+    extends FencedRpcEndpoint<ResourceManagerId>
+    implements ResourceManagerGateway
+{
+    CompletableFuture<RegistrationResponse> registerJobMaster(
+        JobMasterId jobMasterId,
+        ResourceID jobManagerResourceId,
+        String jobManagerAddress,
+        JobID jobId,
+        Time timeout)
+    {
+        CompletableFuture<JobMasterGateway> jobMasterGatewayFuture =
+            getRpcService()
+            .connect(jobManagerAddress, jobMasterId, JobMasterGateway.class);
+        CompletableFuture<RegistrationResponse> registrationResponseFuture =
+            jobMasterGatewayFuture.thenAcceptAsync(
+                (JobMasterGateway jobMasterGateway) -> {
+                    return registerJobMasterInternal(
+                        jobMasterGateway,
+                        jobId,
+                        jobManagerAddress,
+                        jobManagerResourceId);
+                },
+                getMainThreadExecutor());
+
+        return registrationResponseFuture;
+    }
+
+    RegistrationResponse registerJobMasterInternal(
+        JobMasterGateway jobMasterGateway,
+        JobID jobId,
+        String jobManagerAddress,
+        ResourceID jobManagerResourceId)
+    {
+        if (jobManagerRegistrations.containsKey(jobId)) {
+            ......
+        } else {
+            // new registration for the job
+            JobManagerRegistration jobManagerRegistration =
+                    new JobManagerRegistration(jobId, jobManagerResourceId, jobMasterGateway);
+            jobManagerRegistrations.put(jobId, jobManagerRegistration);
+            jmResourceIdRegistrations.put(jobManagerResourceId, jobManagerRegistration);
+        }
+
+        log.info("Registered job manager {}@{} for job {}.", jobMasterGateway.getFencingToken(), jobManagerAddress, jobId);
+
+        jobManagerHeartbeatManager.monitorTarget(jobManagerResourceId, new JobMasterHeartbeatSender(jobMasterGateway));
+
+        return new JobMasterRegistrationSuccess(getFencingToken(), resourceId);
     }
 }
 ```
