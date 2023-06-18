@@ -399,3 +399,7 @@ a:focus {
   overflow-x: auto;
   margin-bottom: var(--spacing-8);
 }
+
+details {
+  margin-bottom: 30px
+}

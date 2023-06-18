@@ -55,9 +55,9 @@ Hadoop RPC主要分为四个部分：
 + 网络传输层：描述了Client与Server之间消息传输的方式，Hadoop RPC采用了基于TCP/IP的Socket机制
 + 服务器端处理框架：可被抽象为网络I/O模型，描述了客户端与服务器端间信息交互方式，Hadoop RPC采用了基于Reactor设计模式的事件驱动I/O模型
 
-Hadoop RPC（`org.apache.hadoop.ipc.RPC`）对外主要提供了两种接口：
-+ `<T> ProtocolProxy <T> getProxy/waitForProxy()`：构造一个客户端代理对象，用于向服务器发送RPC请求
-+ `Server RPC.Builder(Configuration).build()`：为某个协议实例构造一个服务器对象，用于处理客户端发送的请求
+Hadoop RPC（org.apache.hadoop.ipc.RPC）对外主要提供了两种接口：
++ \<T> ProtocolProxy \<T> getProxy/waitForProxy()：构造一个客户端代理对象，用于向服务器发送RPC请求
++ Server RPC.Builder(Configuration).build()：为某个协议实例构造一个服务器对象，用于处理客户端发送的请求
 
 Hadoop RPC主要由三个大类组成，即RPC、Client和Server，分别对应对外编程接口、客户端实现和服务器实现。
 
