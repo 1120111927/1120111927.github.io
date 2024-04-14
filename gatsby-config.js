@@ -14,8 +14,8 @@ module.exports = {
       name: `luuua`,
       summary: `圣人之道,吾性自足,不假外求.`,
     },
-    description: `A starter blog demonstrating what Gatsby can do.`,
-    siteUrl: `https://gatsbystarterblogsource.gatsbyjs.io/`,
+    description: `笑渐不闻声渐悄，多情却被无情恼`,
+    siteUrl: `https://github.com/1120111927`,
     social: {
     },
   },

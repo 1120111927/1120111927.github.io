@@ -250,7 +250,7 @@ a:focus {
 
 .global-wrapper {
   margin: var(--spacing-0) auto;
-  margin-right: max(305px, 25%);
+  margin-right: max(305px, 30%);
   max-width: var(--maxWidth-wrapper);
   padding: var(--spacing-10) var(--spacing-5);
 }
@@ -397,6 +397,7 @@ a:focus {
 
 .wrapper {
   overflow-x: auto;
+  text-align: center;
   margin-bottom: var(--spacing-8);
 }
 
