@@ -40,9 +40,6 @@ module.exports = {
       options: {
         plugins: [
           {
-            resolve: `gatsby-remark-draw`
-          },
-          {
             resolve: `gatsby-remark-table-of-contents`,
             options: {
               exclude: "Table of Contents",
